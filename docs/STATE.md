@@ -8,17 +8,20 @@
 
 | Name               | Role                | Current task          | Status    |
 |--------------------|---------------------|-----------------------|-----------|
-| game-analyst       | game-analyst        | Write GAME_SPEC.md    | completed |
-| (to be spawned)    | researcher-hmm      | RESEARCH_HMM_RAT.md   | pending   |
-| (to be spawned)    | researcher-search   | RESEARCH_ADVERSARIAL.md | pending |
-| (to be spawned)    | researcher-prior    | RESEARCH_PRIOR_ART.md | pending   |
-| (to be spawned)    | contrarian-scope    | CONTRARIAN_SCOPE.md   | pending   |
+| game-analyst         | game-analyst         | Write GAME_SPEC.md      | completed |
+| researcher-hmm       | researcher-hmm       | RESEARCH_HMM_RAT.md     | completed |
+| (to be spawned)      | researcher-search    | RESEARCH_ADVERSARIAL.md | pending   |
+| (to be spawned)      | researcher-prior     | RESEARCH_PRIOR_ART.md   | pending   |
+| researcher-heuristic | researcher-heuristic | RESEARCH_HEURISTIC.md   | completed |
+| (to be spawned)      | contrarian-scope     | CONTRARIAN_SCOPE.md     | pending   |
 
 ## Recent decisions
 
 - **D-001** (2026-04-16): Adopt multi-agent orchestration model per `TEAM_CHARTER.md`. Contrarian and researcher roles mandatory. Documents in `docs/` are single source of truth.
 - **D-002** (2026-04-16): Architecture decision DEFERRED. No architecture pre-committed; it will be chosen by Strategy-Architect after research evidence is in. (Corrects earlier prejudgment.)
 - **D-003** (2026-04-16): `docs/GAME_SPEC.md` landed. Ground-truth spec is authoritative over `CLAUDE.md`; see its §10 for the CLAUDE.md discrepancy list.
+- **R-HMM-001** (2026-04-16): HMM research delivered in `docs/research/RESEARCH_HMM_RAT.md` — forward-filter math, `p_0 = e_0 @ T^1000 ≈ π` (stationary, TV < 5e-6 at k=1000 for all four shipped matrices; mixing times 170-385 steps; max entry ≤ 0.038 so early searches are pure VoI), opponent-search update recipe (miss → zero+renorm, hit → reset to `p_0` NOT `δ_{(0,0)}`), runtime <1 ms/turn. Open forks to Strategy-Architect listed in doc §F.
+- **R-HEUR-001** (2026-04-16): Heuristic research delivered in `docs/research/RESEARCH_HEURISTIC.md`. Key results: (a) prime-then-roll PPT rises monotonically 1.33 (k=2) → 3.50 (k=7); realistic 40-turn ceiling 80–110 pts. (b) Carrie's cell potential `P(c)` formulated as `[best_roll + 0.3·second_best_roll]·(1 − 0.5·P_opp_first)/(1 + 0.3·dist(worker,c))` — this IS the 80%→90% leverage. (c) 9-feature linear heuristic (F1, F3–F5, F7, F9–F12) with CMA-ES-tuned weights is the recommended architecture; small-NN is upside-only given deadline. Open forks to Strategy-Architect in §G.
 
 ## Blockers
 
