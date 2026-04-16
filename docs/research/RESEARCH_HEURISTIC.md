@@ -413,9 +413,79 @@ Used as features F3 and F4 in a 9-feature linear heuristic (Architecture F2) wit
 
 ---
 
+## Section H — Amendments after GAME_SPEC.md §10 (added 2026-04-16)
+
+Three ground-truth facts from `docs/GAME_SPEC.md` force concrete revisions to the earlier sections. Each is applied inline below with its specific consequence.
+
+### H.1 Spawns are NOT uniform in the inner 4×4, and can land on BLOCKED cells
+
+**Fact (GAME_SPEC §1 + §10 item 7 + item 17):** `generate_spawns` picks `x ∈ {2,3}` for Player A, then mirrors to `(7-x, y)` for Player B. Both spawns share the same `y ∈ {2,3,4,5}`. So A is *always* on the left half, B *always* on the right half; and `generate_spawns` does **not** check against `_blocked_mask` — a 3-deep corner blocker at (0..2, 0..2) can legally contain A's spawn at (2,2).
+
+**Consequence for heuristic (§C, F13–F14):**
+
+- **F13 (center control)** — drop or reweight. Workers are already constrained to x ∈ {2,3} or {4,5}; `manhattan(worker, (3.5, 3.5))` varies over a tight 1–3 range at spawn. The feature adds almost no signal in the opening and is better replaced by **F13' (opening-half bias)**: for Player A, reward leftward reach (west-side `reach`) in the opening 5–10 turns; for Player B, mirror. Rationale: you start on your half and the opponent's half is unreachable without crossing contested center cells.
+- **F14 (blocker_proximity_penalty)** — keep, but **compute dynamically against `_blocked_mask`**, not against "corner" assumptions. The feature must never hard-code corner positions because a 3×2 block and a 2×3 block have different footprints and the blocker layout is per-game random (CLAUDE.md §1.3).
+- **New F14a (spawn-on-blocker check):** on the very first `play()` call, if `board.get_cell(player_worker.position) == BLOCKED`, the agent must still act; it cannot prime (PRIME requires current cell = SPACE). The heuristic should not panic — just verify move generation handles this. Add an assertion in integration tests, not in the heuristic itself. Strategy-Architect should flag this to Dev-Heuristic as a Day-1 sanity test.
+- **Cell-potential `P(c)` (§B):** the **opponent-first discount** `P_opp_first(c)` must use actual opponent worker coordinates, not a symmetric prior. Since A is always left-half and B always right-half, *center cells (x=3 and x=4)* are the contested zone — `P_opp_first` should approach 0.5 for these cells in the opening. Cells on your own half (x ≤ 3 for A, x ≥ 4 for B) default to `P_opp_first ≈ 0` early. Bake this into the initial-move heuristic rather than treating all cells symmetrically.
+- **Distance discount α (§B.2):** may need **asymmetric tuning** per player color. Player A (moves first) has a 1-ply initiative advantage on contested center cells; a slightly smaller α for A means we value reaching across the center more aggressively than B does. Low priority — let CMA-ES find this if it exists.
+
+### H.2 Tournament time budget is 240 s (not 360 s); per-move ≤ 6 s — heuristic eval cost is a hard constraint
+
+**Fact (GAME_SPEC §7 + §10 item 5, 14):** tournament mode (`limit_resources=True`) gives each player **240 s total** across all 40 moves. Local self-play uses 360 s (50% more). Mean per-move budget on bytefight.org ≈ 6 s, but includes HMM update + expectiminimax + leaf evals.
+
+**Consequence for heuristic cost budget (§C.4, §F):**
+
+- **Revise per-heuristic-eval target.** Earlier §C.4 estimated ~500 ops and 5M ops/move at 10k leaves — that's fine in C but actually ~50–500 ms in pure Python. With a 6 s total move budget and HMM update taking ~1 ms + search overhead + move-gen, the heuristic should aim for **≤ 100 μs per eval** in the *tournament-mode* regime. This is achievable only with:
+  - numpy-vectorized ray scans (not Python loops),
+  - precomputed reach tables updated incrementally when the primed/carpet masks change,
+  - belief features (F7, F8, F15) read from a cached belief array, not recomputed per leaf.
+- **Downgrade the NN architecture (F3).** A 10→32→1 NN at ~340 multiply-adds per eval with numpy is ~30 μs — technically within budget, but with numpy overhead could reach 200–500 μs. **F3 is only feasible if the model is exported to a numba/cython-compiled path** (both are in `requirements.txt`). Flag this as a deployment risk to Strategy-Architect.
+- **Local-vs-tournament benchmark skew.** Any heuristic tuning that passes locally must leave **≥ 33% runtime slack** to survive the tournament's tighter budget. Rule of thumb for the tuning harness: if a match finishes with `time_left > 80 s` locally (out of 360), it will finish with `time_left > 30 s` on bytefight.org (out of 240). Anything tighter is suspect.
+- **Implication for Architecture choice (§F).** Tilts the recommendation further toward **F1/F2 linear** and away from F3 NN. F2's CMA-ES tuning already assumes 50 matches per weight-vector; those matches must themselves be time-safe. Consider running CMA-ES with `limit_resources=True` even in local evaluation so tuning targets the real budget.
+- **Adaptive per-move time allocation.** Heuristic quality matters most mid-game (turns 15–30) when the board is complex; use time-left-aware evaluation depth in expectiminimax. Heuristic itself stays the same; the *search* around it adapts. Flag to Dev-Search.
+
+### H.3 `apply_move(SEARCH)` is a no-op on points — heuristic must model +4p − 2(1−p) and the rat-capture side-effects
+
+**Fact (GAME_SPEC §2.4 + §10 item 20):** the SEARCH branch in `apply_move` is `pass`. Points (+4 correct, −2 wrong) and rat respawn (new `δ_{(0,0)} · T^1000`) happen only in `play_game`, outside `apply_move`/`forecast_move`. Therefore `forecast_move(Move.search(...))` returns a board where `player_worker.points` is **unchanged** and the belief grid is **unchanged**.
+
+**Consequence for heuristic (§E, F7/F8/F15):**
+
+- **F15 (expected_search_value) must be computed in the heuristic itself, not read from board state.** The leaf evaluator, when examining a SEARCH child node, must:
+  1. Compute `p = belief[search_loc]` from the *pre-search* belief grid.
+  2. Compute the **expected score delta**: `E[Δ] = 4·p − 2·(1−p) = 6·p − 2`.
+  3. Add `E[Δ]` to the forecast-board's `points_diff` feature F1 manually.
+  4. Compute the **expected belief update**:
+     - With probability `p`: rat was there → captured → rat respawns → belief_new = `p_0 = e_0 @ T^1000` (the shipped prior). **NOT `δ_{(0,0)}`** — see `RESEARCH_HMM_RAT.md` for why.
+     - With probability `1-p`: rat not there → zero that cell, renormalize the rest.
+  5. Evaluate the heuristic on the expectation over these two outcomes, weighted by `p` and `1-p`.
+- **Integration with expectiminimax as a chance node.** SEARCH is effectively a 2-outcome chance node (hit vs miss). The engine handles this in `play_game` but the in-tree search does not. **Dev-Search must wrap SEARCH children in chance-node logic.** This is an architecture-level fact, not just heuristic.
+- **Search-heuristic tie-in with belief entropy (F8).** The value-of-information argument in §E.2 is now concrete: the expected *post-search* entropy is
+  ```
+  E[H(belief_new)] = p · H(p_0)  +  (1−p) · H(belief \ {search_loc}, renormalized)
+  ```
+  On a miss, entropy drops by `−log(1−p) − p/(1−p) · log(p)` if small-p. On a hit, entropy jumps *up* to `H(p_0)` (the shipped prior is more diffuse than a late-game belief — so a hit can be an information *loss*).
+  Consequence: late-game, searching on a high-p cell gives +4 points but resets your belief grid. **The heuristic should prefer searching WHEN points are decisive** (e.g., trailing + few turns left) and AVOID searching when point-differential is comfortable but belief mass is concentrated (use that belief for the *next* search instead).
+- **Revised F15 formula:**
+  ```
+  F15(c) = (6·p − 2) + γ_info · E[InfoValue(c)] − γ_reset · P(hit) · H(p_0)
+  ```
+  The `γ_reset · p · H(p_0)` term penalizes the belief-collapse cost of a successful search. Starting guesses: `γ_info = 0.5`, `γ_reset = 0.3`. CMA-ES should find the right balance.
+- **Opponent-search tracking (defensive).** The opponent might capture the rat; when they do, *our* belief grid must also be reset to `p_0`. This is not strictly a heuristic concern, but any features F7/F8/F15 that consume belief need to be fed a grid that was reset on `opponent_search == (loc, True)` from the prior ply. Flag to Dev-HMM (it is already flagged in `RESEARCH_HMM_RAT.md`).
+
+### H.4 Summary of diffs from v1
+
+- **Added:** F13' (opening-half bias), F14a (spawn-on-blocker sanity), revised F15 formula with belief-reset penalty, chance-node treatment of SEARCH in leaf eval.
+- **Tightened:** per-eval time budget (≤ 100 μs tournament), pushing preference to F2 linear over F3 NN.
+- **Clarified:** `P_opp_first(c)` must use asymmetric left/right-half spawn prior, not symmetric.
+- **Corrected:** prior for belief reset after capture is `p_0 = e_0 @ T^1000`, not `δ_{(0,0)}` (the 1000 silent steps happen before any observation is possible).
+
+---
+
 ## References
 
 - `assignment.pdf` §9 (grading) and §7 (bot descriptions) — authoritative on reference-bot levels.
+- `docs/GAME_SPEC.md` §1, §2.4, §3.2, §7, §10 (items 5, 7, 14, 17, 20) — source of H.1/H.2/H.3 facts.
+- `docs/research/RESEARCH_HMM_RAT.md` — confirms `p_0 = e_0 @ T^1000 ≈ π` (stationary) and mixing times.
 - `engine/game/enums.py::CARPET_POINTS_TABLE` — exact scoring table used in §A.
 - `engine/game/board.py::apply_move` — confirms prime=+1, roll gives CARPET_POINTS_TABLE[k].
 - `engine/game/rat.py` (per CLAUDE.md) — noise model driving F7/F8/F15.
