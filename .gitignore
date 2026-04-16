@@ -1,0 +1,38 @@
+# Match logs (regenerated per run, high-volume)
+3600-agents/matches/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+env/
+.Python
+
+# Editor/OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Model/training artifacts (add back selectively when needed)
+*.ckpt
+*.pt
+*.pth
+*.h5
+*.npy
+*.npz
+runs/
+wandb/
+mlruns/
+
+# Local temp
+*.log
+*.tmp
+*.bak
+tmp/
+scratch/
