@@ -567,7 +567,61 @@ If we need JAX (for GPU pipelining into the search tree), the same ops map to jn
 - Via repeated squaring to `T^{1024}` then left-multiply by `e_0`: 10 × 64³ = 2.6M multiplies. Similar cost.
 - Total `__init__` HMM work: **< 10 ms**, well inside the 10–20 s init budget.
 
-### E.6 Sanity checks / invariants
+### E.6 SEARCH in a lookahead tree — `apply_move` side effects are manual
+
+**Critical integration note** (flagged by game-analyst in `docs/GAME_SPEC.md` §10, cross-referenced in `docs/STATE.md`'s GAME_SPEC takeaways). `engine/game/board.py::apply_move` treats `MoveType.SEARCH` as a **bare `pass`** (board.py:256–258). It neither adjusts points nor resets the rat. The `+RAT_BONUS = +4` / `−RAT_PENALTY = −2` delta and the `rat.spawn()` respawn happen in the game loop at `engine/gameplay.py:434–445`, **after** `apply_move` returns.
+
+Consequence for any expectiminimax / lookahead tree that calls `board.forecast_move(SEARCH)` (which deep-copies then `apply_move`s): the forecasted board has **stale points and the external belief tracker is untouched**. You must apply both side effects by hand at the SEARCH node.
+
+For our HMM tracker this means: a SEARCH node in the tree is a **chance node** with two branches, weighted by the current belief `p = b[s_search]`:
+
+1. **Hit branch, probability `p`:**
+   - Our-side: `worker.points += 4`; `tracker.b ← p_0.copy()`.
+   - Opponent-side: their worker gets `+4`, but our tracker **still resets to `p_0`** because the rat respawn applies symmetrically to both players' beliefs.
+2. **Miss branch, probability `1 − p`:**
+   - Acting player's `worker.points −= 2`.
+   - Belief update: `tracker.b[s_search] = 0`, renormalize. (No rat move is consumed by SEARCH itself — the rat's one-step move is already applied at the top of each player's turn, before their `play()` runs.)
+
+To keep the tree cheap, the `RatBelief` class should expose lightweight snapshot/restore helpers so that each tree node doesn't copy the full 64-float belief on every expansion:
+
+```python
+def snapshot(self) -> np.ndarray:   return self.b.copy()
+def restore(self, snap):            self.b = snap
+
+def apply_our_search(self, s_idx, hit: bool):
+    if hit:
+        self.b = self.p_0.copy()
+    else:
+        self.b[s_idx] = 0.0
+        self.b /= self.b.sum()
+
+def apply_opp_search(self, s_idx, hit: bool):   # symmetric
+    if hit:
+        self.b = self.p_0.copy()
+    else:
+        self.b[s_idx] = 0.0
+        self.b /= self.b.sum()
+```
+
+Caller pattern inside expectiminimax:
+
+```python
+snap = tracker.snapshot()
+# Hit branch
+tracker.apply_our_search(s, hit=True)
+value_hit = 4 + evaluate_subtree(...)
+tracker.restore(snap)
+# Miss branch
+tracker.apply_our_search(s, hit=False)
+value_miss = -2 + evaluate_subtree(...)
+tracker.restore(snap)
+# Chance-node combine
+return p * value_hit + (1 - p) * value_miss
+```
+
+The 64-float copy is ~0.5 μs; not a bottleneck even with thousands of tree nodes.
+
+### E.7 Sanity checks / invariants
 
 After every update:
 
