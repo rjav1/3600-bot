@@ -366,3 +366,53 @@ The biggest thing working *against* it: research-phase scope creep in a 3-day sp
 My confidence in the final strategy emerging well from this pipeline: **moderate** (~60%). My confidence that we'll at least clear the 70% floor: **high** (~90%). My confidence that we'll beat Carrie: **low-moderate** (~25%, honest). The pipeline is better than the probable outcome, which is a fine place to be — it means we have optionality if things go well.
 
 No pipeline-halting issue. Proceed to Phase 1 with items F-1 through F-5 addressed first.
+
+---
+
+## Section G — Post-RESEARCH_PRIOR_ART addenda (added 2026-04-16 after researcher-prior's findings)
+
+Three findings from `docs/research/RESEARCH_PRIOR_ART.md` update my critique. I am adding these as addenda rather than rewriting the relevant sections so the timestamp of new evidence is clear.
+
+### G-1. Revising C-6 "opponent-specific exploit" cost estimate upward
+**Evidence:** Prior-art confirms the carpet/rat game is brand new to Spring 2026 — no public prior-semester code, writeups, or winning-strategy leaks exist. Earlier I estimated ~1 day to reverse-engineer George/Albert/Carrie's heuristics from scrimmage observation. **That estimate was too optimistic**: without any prior-year code to reference, the only way to build an exploitation model is from live scrimmage logs, which requires (a) Chrome-MCP-mediated uploads to bytefight and (b) N matches per opponent to identify their response patterns statistically.
+
+**Revised cost:** 1.5-2 days, bounded by scrimmage throughput rather than engineering effort. **Revised P(beats Carrie):** still 0.25-0.35 — the upside is unchanged, but the schedule risk is higher. **Implication for §F-8:** schedule opponent-modeling to begin as soon as the floor-bot ships and has live scrimmage data, not later. The scrimmage data IS the research corpus.
+
+### G-2. HMM recipe — contrarian challenge to "just use Ghostbusters"
+**Evidence:** researcher-hmm and researcher-prior converged on the same recipe — a forward-filter over a 64-state belief grid, almost verbatim from Berkeley CS188 Project 4 ("Ghostbusters"). That recipe is pedagogical — it is designed to be understandable, not optimal.
+
+**Contrarian challenge** to the team committing to that recipe: Ghostbusters assumes the ghost's transition model is fixed and its noise model is axis-aligned. Our T is drawn from 4 families with ±10% per-entry noise — the filter is still a linear operator (T^1000 is fixed per game, so Ghostbusters applies). But two specific things the pedagogical recipe DOES leave on the table:
+
+1. **Search action as an information-gathering primitive, not just a scoring action.** Ghostbusters treats observations as given (you always get one). In our game the player chooses when to take a search (incurring opportunity cost). A search returns **perfect information** on a single cell (confirm hit / confirm miss → zero out that cell in the posterior). A well-timed miss on a cell where belief was 0.25 collapses belief variance more than a single noise+distance tick. This means the optimal search-action policy is **not** "+EV > 1/3"; it's "maximum expected-reduction-in-entropy per second of elapsed time". Ghostbusters doesn't model this; our bot should.
+
+2. **Joint belief with opponent's search outcome.** Opponent searches are broadcast (board.opponent_search). A successful opponent search resets the rat to (0,0) + 1000 moves — our belief must **collapse and re-diffuse**. Ghostbusters doesn't have an adversary who can reset the hidden-state distribution. This is the more operationally relevant deviation — researcher-hmm noted it; Strategy-Architect must enforce it.
+
+**Particle filter vs. exact forward-filter:** for 64 states, exact beats PF. Only reason to consider PF is if we wanted to track the *opponent's belief about the rat* as part of opponent-modeling (C-6). That's a secondary belief over a 64-dim simplex — too big for exact tracking. A particle-filter sample over opponent-belief-distributions is plausible for C-6 but expensive; defer unless scrimmage data proves it's worth it.
+
+**UKF / EKF:** not applicable. Our state space is discrete and non-Euclidean; UKF/EKF assumes Gaussian posteriors over continuous state. Skip.
+
+**Verdict:** keep the Ghostbusters-style forward filter as the primary tracker, BUT it must be extended with (a) search-as-information-action evaluation and (b) rat-respawn handling. A naive CS188 implementation will leak ELO. The extension is cheap; the Strategy-Architect should name this as a dedicated module requirement, not an implementation detail.
+
+### G-3. NN-from-scratch at <1 week: hard guardrail
+**Evidence:** prior-art postmortems from Halite, Battlecode, and CodinGame unanimously find that NN-from-scratch loses to handcrafted heuristic + A/B tuning at sub-week timelines. This aligns with my §C-3/§C-5 verdicts.
+
+**Guardrail for the pipeline:** Phase 5 of PIPELINE.md lists "Neural-net heuristic trained on self-play logs (if PACE resources viable in time)" as a candidate iteration topic. **That line should be downgraded from "candidate" to "explicit non-goal"** unless and only unless someone on the team has demonstrated: (a) they can train a value network to beat a tuned linear heuristic in a 1-day ablation, (b) they have ≥12 hours of compute on PACE queued and confirmed, (c) the NN is strictly additive to the search-based bot (never sole evaluator).
+
+Given that none of those conditions is met right now, and won't be met soon, **recommend removing NN training from the PIPELINE.md Phase 5 candidate list**. Add as F-13 below.
+
+### G-4. Live-testing bottleneck is Chrome MCP, not scrimmage throughput
+**Evidence:** bytefight.org blocks WebFetch; live scrimmage uploads require the Chrome MCP extension. Earlier my §B-4 (MEDIUM) worried about scrimmage ELO diverging from tournament ELO. That's still valid; what I missed is **upload friction** — each candidate-submission upload costs a Chrome-MCP round-trip and has flakiness risk (PIPELINE.md §"Risk: Chrome MCP flakiness"). This is already in the risk log, but the operational consequence is that **live testing is a throttled shared resource, not free.**
+
+**Practical consequence:** batch live scrimmage runs. Don't upload every +1pp local improvement; set a threshold (e.g. +3pp local winrate on 200 paired matches) before incurring an upload. Otherwise Chrome MCP flakiness eats hours.
+
+**Add to §F as F-14.**
+
+### Revisions to Section F recommendation list
+
+13. **[MEDIUM] Downgrade NN-training from candidate to non-goal in PIPELINE.md Phase 5.** Three preconditions (1-day ablation win, PACE queue confirmed, strictly additive usage) are unmet and unlikely to be met. Add back only if all three conditions flip. (Item G-3.)
+
+14. **[LOW] Define a live-scrimmage batching rule** before any uploads begin: only upload candidates that have beaten the current baseline by ≥ 3 pp on ≥ 200 paired local matches. (Item G-4.)
+
+### No change to headline grade-probability estimates
+
+P(≥70%) ≈ 0.90, P(≥80%) ≈ 0.55, P(≥90%) ≈ 0.25, P(#1) ≈ 0.05. The prior-art findings are incremental clarifications; none of them shifts expected outcomes enough to move the needle. If anything, the confirmation that HMM ≈ Ghostbusters + extensions *raises* my confidence in our baseline slightly; the confirmation that NN is a time-sink *shrinks* the downside tail. Net: no change.
