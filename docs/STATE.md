@@ -1,6 +1,6 @@
 # STATE — Rolling Snapshot
 
-**Last updated:** 2026-04-16 (Phase 0 kickoff)
+**Last updated:** 2026-04-16 (contrarian-scope finished)
 **Current phase:** Phase 0 — Foundations
 **Deadline:** 2026-04-19 23:59
 
@@ -10,10 +10,10 @@
 |--------------------|---------------------|-----------------------|-----------|
 | game-analyst         | game-analyst         | Write GAME_SPEC.md      | completed |
 | researcher-hmm       | researcher-hmm       | RESEARCH_HMM_RAT.md     | completed |
-| (to be spawned)      | researcher-search    | RESEARCH_ADVERSARIAL.md | pending   |
-| (to be spawned)      | researcher-prior     | RESEARCH_PRIOR_ART.md   | pending   |
+| researcher-search    | researcher-search    | RESEARCH_ADVERSARIAL.md | completed |
+| researcher-prior     | researcher-prior     | RESEARCH_PRIOR_ART.md   | completed |
 | researcher-heuristic | researcher-heuristic | RESEARCH_HEURISTIC.md   | completed |
-| (to be spawned)      | contrarian-scope     | CONTRARIAN_SCOPE.md     | pending   |
+| contrarian-scope     | contrarian-scope     | CONTRARIAN_SCOPE.md     | completed |
 
 ## Recent decisions
 
@@ -22,10 +22,14 @@
 - **D-003** (2026-04-16): `docs/GAME_SPEC.md` landed. Ground-truth spec is authoritative over `CLAUDE.md`; see its §10 for the CLAUDE.md discrepancy list.
 - **R-HMM-001** (2026-04-16): HMM research delivered in `docs/research/RESEARCH_HMM_RAT.md` — forward-filter math, `p_0 = e_0 @ T^1000 ≈ π` (stationary, TV < 5e-6 at k=1000 for all four shipped matrices; mixing times 170-385 steps; max entry ≤ 0.038 so early searches are pure VoI), opponent-search update recipe (miss → zero+renorm, hit → reset to `p_0` NOT `δ_{(0,0)}`), runtime <1 ms/turn. Open forks to Strategy-Architect listed in doc §F.
 - **R-HEUR-001** (2026-04-16): Heuristic research delivered in `docs/research/RESEARCH_HEURISTIC.md`. Key results: (a) prime-then-roll PPT rises monotonically 1.33 (k=2) → 3.50 (k=7); realistic 40-turn ceiling 80–110 pts. (b) Carrie's cell potential `P(c)` formulated as `[best_roll + 0.3·second_best_roll]·(1 − 0.5·P_opp_first)/(1 + 0.3·dist(worker,c))` — this IS the 80%→90% leverage. (c) 9-feature linear heuristic (F1, F3–F5, F7, F9–F12) with CMA-ES-tuned weights is the recommended architecture; small-NN is upside-only given deadline. Open forks to Strategy-Architect in §G.
+- **R-HEUR-002** (2026-04-16): `RESEARCH_HEURISTIC.md` bumped to v1.1 with new Section H reconciling GAME_SPEC §10 facts. Key amendments: (a) asymmetric spawn prior — A is always left-half (x∈{2,3}), B right-half; `P_opp_first(c)` must treat center cells (x=3,4) as contested, own-half cells as safe; F13 (center control) de-weighted. (b) Per-eval budget tightened to **≤ 100 μs** in tournament mode (240 s / 40 moves) — tilts preference further toward F2 linear over F3 NN; tuning harness must run with `limit_resources=True`. (c) SEARCH chance-node explicit: leaf eval must add `6p − 2` to F1 manually AND model belief-collapse side-effect (on hit, belief resets to `p_0 = e_0 @ T^1000` NOT `δ_{(0,0)}`); new F15 formula includes `−γ_reset · p · H(p_0)` term penalizing the belief-reset cost of a successful search.
+- **R-PRIOR-001** (2026-04-16): Prior-art research delivered in `docs/research/RESEARCH_PRIOR_ART.md`. (a) Carpet/rat game is new to Sp2026; no prior-winner code is public (only gatech.edu blurb on chicken-game winner "StockChicken", minimax+AB+Bayes). (b) Berkeley CS188 Project 4 "Ghostbusters" is a near-identical HMM setup — use its forward-algorithm recipe. (c) Gomoku threat-space-search heuristics directly apply to our super-linear carpet-roll bonus. (d) NN-from-scratch is an anti-pattern at <1-week timeline (Halite/Battlecode/CodinGame consensus). (e) Bytefight public page contains nothing beyond CLAUDE.md; no public leaderboard without login.
+- **R-SEARCH-001** (2026-04-16): Adversarial-search research delivered in `docs/research/RESEARCH_ADVERSARIAL.md`. Empirical branching factor **b ≈ 6.3–6.8 excluding SEARCH** (p90=8, late-max=11); **~70 with all 64 SEARCH moves**. Pure-Python throughput: 50 k node-expansions/sec, 318 k move-gen/sec, 48 k full-step/sec. Projected feasible α-β+ID+TT depth: **6–8 ply pure Python, 9–11 ply with numba leaf eval**. Eight candidates surveyed with pseudocode + 1–5 suitability (expectiminimax, *-minimax/Star1-2, α-β+ID+TT+Zobrist, MCTS-UCT, IS-MCTS, PUCT, beam, 1-ply policy) — no winner picked per the contrarian brief. Tentative defaults (all flippable): (1) rat belief as leaf-potential NOT in-tree chance nodes — keeps b at ~7 and matches R-HMM-001; (2) SEARCH excluded from tree, root-only EV-gated at `P(rat)>1/3`; (3) ID controller + 0.2 s safety + 0.6×/1.0×/1.6× adaptive multipliers; (4) move ordering stack = hash-move → killer → history → type-priority → immediate-point-delta; (5) NO null-move pruning (primed-line Zugzwang analogs), NO magic bitboards. 10 open decisions for Strategy-Architect in doc §I. Note: benchmarks above were run without `limit_resources=True`; tournament sandbox may shift nps ±20%, per C-SCOPE E-1.
+- **C-SCOPE-001** (2026-04-16): Red-team critique delivered in `docs/research/CONTRARIAN_SCOPE.md`. No pipeline-halting issue. Top recommendations (Phase-1-blockers): (1) enforce `limit_resources=True` in all benchmarking — dev-vs-tournament time/sandbox gap is underweighted; (2) rewrite `RESEARCH_ADVERSARIAL.md` brief to compare architectures (expectiminimax / MCTS / reactive policy / opponent-model), current scope is anchored on expectiminimax; (3) ship a reactive-policy floor bot by ~hour 12 as grade-floor (70%) insurance, before any deep architecture commit; (4) switch to paired-match eval (same T/spawn/seed) — 50 unpaired matches has ±14 pp 95% CI, inadequate for detecting 5 pp improvements; (5) add 1-day "opponent-specific exploit" track (model George/Albert/Carrie explicitly) — highest-leverage alt at ~0.25-0.35 P(beats Carrie); (6) honest grade-probability estimates: P(>70%)≈0.90, P(>80%)≈0.55, P(>90%)≈0.25.
 
 ## Blockers
 
-None yet.
+None pipeline-halting. Top-priority items the orchestrator should address before Phase 1 per `docs/research/CONTRARIAN_SCOPE.md` §F: the time-budget note in CLAUDE.md (A-1), sandbox-test gap (E-1), architecture-comparison rewrite (B-2), reactive floor-bot insurance (C-1), partner activation protocol (B-7).
 
 ## Open loops
 
