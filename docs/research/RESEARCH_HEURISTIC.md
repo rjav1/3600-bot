@@ -2,7 +2,7 @@
 
 **Author:** researcher-heuristic
 **Date:** 2026-04-16
-**Status:** v1.1 — updated 2026-04-16 with GAME_SPEC.md §10 amendments (see new Section H).
+**Status:** v1.2 — updated 2026-04-16 with GAME_SPEC.md §10 amendments (§H) and explicit task-brief checklist mapping (§I).
 
 **Why this document matters:** per `assignment.pdf` §9, Albert and Carrie share the same expectiminimax + HMM backbone. The *only* difference that moves a bot from the 80% tier to the 90% tier is heuristic quality. Carrie is literally described as using "an estimate of the potential of each cell and its distance from the bot". This document is the leverage point for the whole project.
 
@@ -478,6 +478,129 @@ Three ground-truth facts from `docs/GAME_SPEC.md` force concrete revisions to th
 - **Tightened:** per-eval time budget (≤ 100 μs tournament), pushing preference to F2 linear over F3 NN.
 - **Clarified:** `P_opp_first(c)` must use asymmetric left/right-half spawn prior, not symmetric.
 - **Corrected:** prior for belief reset after capture is `p_0 = e_0 @ T^1000`, not `δ_{(0,0)}` (the 1000 silent steps happen before any observation is possible).
+
+---
+
+## Section I — Checklist mapping against task brief (added 2026-04-16)
+
+The original task brief (auto-restated as Task #5) enumerated items (a)–(g). This section maps each to concrete coverage in this document and adds tightening where earlier sections were thin.
+
+### I.(a) What makes a cell "valuable"
+
+Covered in §B.1 (P_1–P_5) and §C. Explicit summary:
+
+| Factor | Feature / formula | Where |
+|---|---|---|
+| Proximity to long primeable line | `max_d reach(c, d)`, composed into `P(c)` | §B.1 P_1 |
+| Adjacent existing primes (free continuation) | `P_3` second-best direction; F5/F16 | §B.1, §C.1–C.2 |
+| Distance from opponent | `P_opp_first(c)` multiplicative penalty | §B.1 P_5 + §D.1 |
+| Distance from blocked corner | F14 `blocker_proximity_penalty`; implicit in reach saturation | §C.2 F14 |
+| Distance from own worker | `1 / (1 + α · dist)` distance decay | §B.1 P_4, §B.2 |
+
+### I.(b) Partial prime line vs completing a shorter roll now
+
+**Keep-building vs roll-now decision rule.** Let `k_now` = current primed-run length in front of worker, `k_max` = max feasible extension (bounded by reach / turns_left / opponent proximity). The choice between "roll at `k_now`" and "prime one more then roll at `k_now+1`":
+
+```
+roll_now_value = CARPET_POINTS_TABLE[k_now]                    (1 turn, immediate)
+extend_value   = 1 + CARPET_POINTS_TABLE[k_now+1]
+                 − P_opp_rolls_first(line) · CARPET_POINTS_TABLE[k_now]
+                                                                (2 turns: +1 prime, +roll, minus opp-theft risk)
+```
+
+Take the extend branch iff `extend_value / 2 > roll_now_value`, i.e. **if the per-turn amortized value of extending beats rolling immediately, AND opponent-theft probability is low enough**. From the PPT table in §A.2:
+
+| k_now | roll_now | extend (no opp risk) | extend better? |
+|---|---|---|---|
+| 1 | −1 | (1 + 2)/2 = 1.5 | **yes, obviously** |
+| 2 | 2 | (1 + 4)/2 = 2.5 | yes |
+| 3 | 4 | (1 + 6)/2 = 3.5 | close — yes |
+| 4 | 6 | (1 + 10)/2 = 5.5 | no, roll |
+| 5 | 10 | (1 + 15)/2 = 8.0 | no, roll |
+| 6 | 15 | (1 + 21)/2 = 11.0 | no, roll |
+
+**Interpretation (no opp risk, no other constraints):** extend while `k_now ≤ 3`; roll at `k_now ≥ 4`. Even 30% theft probability at `k_now=3` still prefers extend. This rule lives *implicitly* inside the heuristic via F3 (cell_potential picks the longer roll) plus F1 (score_diff rewards immediate points) — the linear blend weights decide. Ablation target: verify the chosen weights reproduce this curve.
+
+**Optional explicit feature F17 (continuation_bonus):**
+```
+F17 = max(0, CARPET[k_current + 1] − CARPET[k_current] − 1)
+      · I(worker can reach extension cell next turn)
+```
+Starting weight ~0.5. Classed as "nice-to-have" per §G.1.
+
+### I.(c) EV of priming at location X vs Y given N-move lookahead
+
+The **heuristic does not compute multi-ply EV directly** — that is expectiminimax's job. The heuristic is the *leaf approximation* that lets the search pick without recursing to infinite depth.
+
+At the heuristic level, a one-ply approximation of prime-location EV is:
+```
+EV_prime(c, d) ≈ +1 + γ · [P(new_worker_pos) − P(old_worker_pos)]
+```
+with `γ ≈ 0.8` converting future-potential units to realized-point units. The direction `d*` that maximizes `P(new) − P(old)` is the local best. Deeper N-ply search may override if opponent threatens the better line faster.
+
+**Worked example (for Strategy-Architect intuition):** worker at (3,3), choosing PRIME direction:
+- PRIME right → worker at (4,3), reachable rightward = 4 empties → `P_best = roll_value(4) = 6`.
+- PRIME down → worker at (3,4), reachable downward = 6 empties → `P_best = roll_value(6) = 15`.
+
+Down strictly dominates in the 1-ply approximation. This is exactly what F3 captures at depth 1; at depth N > 1, expectiminimax handles it without explicit rule.
+
+### I.(d) Belief-entropy reduction vs immediate scoring
+
+Covered in §E.2 and §H.3. Synthesized rule:
+```
+choose_search  iff  6·p − 2 + γ_info · InfoValue(c) − γ_reset · p · H(p_0)
+                    >  max_over_moves[ΔF1 + 0.8 · ΔF3]
+```
+Search wins only when combined immediate-EV + info-gain − belief-reset-cost beats the best prime/roll alternative. The inequality is checked *implicitly* at leaves because F15 competes with F3 in the linear blend.
+
+### I.(e) Tempo — when is setup worth spending a turn?
+
+Expanded from §D.4. "Tempo" in this game has three concrete flavors:
+
+1. **Positional tempo:** moving toward a better cell (higher `P(c)`) for next turn's prime. Cost = 1 turn of 0 pts. Break-even: `P(new) − P(old) > γ⁻¹` (roughly ≥ 1.25 cell-potential units). Captured by F3 going up after PLAIN moves.
+2. **Priming tempo:** priming X now to extend at Y next turn, vs priming Y directly. Equal EV if final roll length matches, but priming X first *claims line-of-advance* against opponent blocking. F17 rewards this.
+3. **Search tempo:** +EV search now vs prime-then-search-next-turn. Search collapses belief (loses VoI for future). F15 in §H.3 encodes this trade.
+
+**Rule of thumb:** spend a setup turn iff the follow-up move's expected value exceeds `(setup_cost + follow_up_cost) / follow_up_turns` at today's PPT. Concretely: **never spend a turn whose marginal PPT falls below 1.5 (the k=2 floor) — except as a positional/priming investment into a sequence with ≥ 3.0 PPT future value.**
+
+### I.(f) Terminal state evaluation at depth limit
+
+At a **leaf** of expectiminimax:
+
+- **If `board.is_game_over()`:** raw point differential × huge constant, dominating any heuristic signal.
+  ```
+  H_terminal = (our.points − their.points) · 10_000
+  ```
+  Ties evaluate to 0 (matches Result.TIE when other tiebreakers are exhausted).
+- **If depth limit hit but game not over:** use the linear blend (F1 + w3·F3 − w4·F4 + ...) with **turns-left scheduling**. Weight future-potential features by `turns_left / MAX_TURNS_PER_PLAYER` so late-game leaves lean on score_diff and nearly ignore cell-potential:
+  ```
+  weight_future = min(1.0, turns_left / 10)   # full weight until last 10 turns, then linear decay
+  H = F1 + weight_future · (w3·F3 − w4·F4 + w5·F5 + w9·F9 − w10·F10 + w11·F11 − w12·F12) + (F7/F15 search terms)
+  ```
+- **Worker-stuck penalty at depth limit:** if `mobility(worker) == 0`, the next turn will be an INVALID_TURN loss. Evaluate as terminal:
+  ```
+  if mobility(our_worker) == 0 and turns_left > 0:
+      return -10_000  # we lose next turn
+  ```
+  Mirror for opponent stuck (+10_000).
+
+Strategy-Architect to confirm terminal uses `(ours − theirs)·BIG`, not `ours` alone.
+
+### I.(g) Fixed vs learned heuristics — three architectures
+
+Already covered in §F. Cross-reference:
+
+| Item from brief | Matches architecture | See § |
+|---|---|---|
+| Linear function on hand features | F1 handcrafted + F2 CMA-ES-tuned | §F.1, §F.2 |
+| Small NN | F3 (10 → 32 → 1) | §F.3 |
+| Regression over self-play data | F2's alternative training path (regress to minimax-eval) | §F.2 |
+
+Three architectures delivered. Recommendation stands: **F2 linear + CMA-ES** is the main bet; F1 fallback; F3 upside-only.
+
+### I.Summary
+
+Every item (a)–(g) is addressed with a concrete formula, feature, or decision rule. Items (b), (e), (f) — thin in v1.1 — are now explicit: extend-until-k=3 rule, marginal-PPT ≥ 1.5 tempo rule, terminal×10k + turns-left-scheduled depth-limit blend. No open questions for Task #5 remain.
 
 ---
 
