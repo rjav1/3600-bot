@@ -1,0 +1,424 @@
+# RESEARCH_HEURISTIC.md — Heuristic-Evaluation Theory for Carpet/Rat
+
+**Author:** researcher-heuristic
+**Date:** 2026-04-16
+**Status:** v1.1 — updated 2026-04-16 with GAME_SPEC.md §10 amendments (see new Section H).
+
+**Why this document matters:** per `assignment.pdf` §9, Albert and Carrie share the same expectiminimax + HMM backbone. The *only* difference that moves a bot from the 80% tier to the 90% tier is heuristic quality. Carrie is literally described as using "an estimate of the potential of each cell and its distance from the bot". This document is the leverage point for the whole project.
+
+Scope: the heuristic is a function `h(board, belief_grid) -> float` evaluated at leaves of expectiminimax. It must be cheap (called thousands of times per move) *and* informative. Everything below treats that trade-off explicitly.
+
+No code; pseudocode and formulas only. Source simulations were run in bare Python (see Section A).
+
+---
+
+## Section A — The scoring landscape
+
+### A.1 Raw point sources (from `engine/game/enums.py::CARPET_POINTS_TABLE` and `board.apply_move`)
+
+| Source | Points | Turn cost |
+|---|---|---|
+| Prime step | +1 | 1 turn, converts current cell SPACE → PRIMED, moves worker to neighbor |
+| Carpet roll of length k | CARPET_POINTS_TABLE[k] = {1:-1, 2:2, 3:4, 4:6, 5:10, 6:15, 7:21} | 1 turn |
+| Search correct (P > 0) | +4 | 1 turn |
+| Search wrong | −2 | 1 turn |
+| Plain step | 0 | 1 turn (positioning only) |
+
+### A.2 Prime-then-roll sequence value (k primes + 1 roll)
+
+A "clean" sequence is: prime k times along a straight line, then roll length k back over them (worker ends one cell past the roll line's start). Total cost = k+1 turns. Total points = k + CARPET[k].
+
+| k | prime pts | roll pts | total pts | turns | pts/turn | Δpts vs k−1 |
+|---|---|---|---|---|---|---|
+| 1 | 1 | −1 | 0 | 2 | 0.000 | — |
+| 2 | 2 | 2 | 4 | 3 | **1.333** | +4 |
+| 3 | 3 | 4 | 7 | 4 | **1.750** | +3 |
+| 4 | 4 | 6 | 10 | 5 | **2.000** | +3 |
+| 5 | 5 | 10 | 15 | 6 | **2.500** | +5 |
+| 6 | 6 | 15 | 21 | 7 | **3.000** | +6 |
+| 7 | 7 | 21 | 28 | 8 | **3.500** | +7 |
+
+**Key observations:**
+
+1. **PPT is strictly increasing in k.** Longer rolls are pure Pareto-better *per turn*, not just per roll. A 7-roll is 2.7× more efficient per turn than a 2-roll.
+2. **Marginal value of the (k+1)-th prime is superlinear from k=3 onward.** Going 4→5 adds 5 pts, 5→6 adds 6, 6→7 adds 7. So once you've already primed 4, each additional prime is cheap (1 turn) and adds 5–7 pts. This is the "keep extending" heuristic flag.
+3. **k=1 is a trap.** Rolling a single prime is −1 raw (i.e. you primed for +1 and then rolled for −1 = net 0 over 2 turns). It's *never* profitable absent positional reasons.
+4. **k=2 is the minimum viable roll** (+4 pts over 3 turns, 1.33 PPT).
+
+### A.3 Theoretical ceilings over a 40-turn budget
+
+Assuming no interference, a bot that does nothing but prime-then-roll with fixed k:
+
+| Strategy | Cycles in 40 turns | Total pts | PPT |
+|---|---|---|---|
+| Loop k=2 | 13 cycles × 4 + 1 leftover | 52 | 1.30 |
+| Loop k=3 | 10 cycles × 7 | **70** | 1.75 |
+| Loop k=4 | 8 cycles × 10 | **80** | 2.00 |
+| Loop k=5 | 6 cycles × 15 + 4 leftover | **90** | 2.25 |
+| Loop k=6 | 5 cycles × 21 + 5 leftover | **105** | 2.62 |
+| Loop k=7 | 5 cycles × 28 | **140** | 3.50 |
+
+The k=7 ceiling requires five separate 7-long empty lines on the board; the 8×8 board has corner blockers so this is basically impossible to sustain. The k=6 strategy (5 cycles × 21 = 105 pts) is the *aspirational* ceiling. **Realistic target is 80–110 points**, dominated by k=3–6 sequences. Anything over ~80 should win the game absent interference.
+
+### A.4 Rat-search value
+
+- Break-even: P(rat in chosen cell) > 1/3 (since 0.333·4 − 0.667·2 = 0).
+- EV at P = 0.5: +1.0 point per turn.
+- EV at P = 1.0: +4.0 points per turn (rare).
+- **But search has secondary value**: even a wrong search is a *hard negative* observation that collapses probability mass elsewhere. This can be worth more than the −2 direct loss when belief is diffuse (entropy reduction argument — see §E).
+
+### A.5 Implication for the heuristic: "long-horizon potential" dominates
+
+Because a single k=6 roll is worth 21 points (≈ half a typical game score) and requires 6 contiguous primeable cells, the heuristic *must* value *the ability to build long lines* more than instantaneous point count. A bot that greedily rolls k=2s will max out around 50–60 points. A bot that waits, builds k=5–6 lines, and rolls cleanly will beat it on score. **This is what Carrie's "cell potential × distance from bot" phrase is gesturing at.**
+
+---
+
+## Section B — Cell-potential modeling
+
+A "cell potential" `P(c)` for cell `c` estimates the **expected future points the bot can capture by eventually owning the priming initiative at or near `c`**. It is a surrogate for deep minimax lookahead; the heuristic uses it to value board positions that haven't been rolled yet.
+
+### B.1 Candidate definitions
+
+Let `reach(c, d)` = the number of contiguous non-blocked, non-carpet, non-opponent-worker cells in direction `d ∈ {U,D,L,R}` starting from `c` (inclusive of `c` itself up to the first blocker).
+
+**Candidate B.1 — Best-roll potential (greedy cell-only):**
+```
+P_1(c) = max over directions d of roll_value(min(reach(c,d), 7))
+where roll_value(k) = CARPET_POINTS_TABLE[k] if k >= 2 else 0
+```
+Simple; captures the biggest single roll achievable if we were standing on `c` with a fully-primed line already in front of us. Under-counts because it ignores the prime cost that already paid for that line; in leaf evaluation we want to include already-earned prime points separately (see §C).
+
+**Candidate B.2 — Direction-weighted sum (multi-roll potential):**
+```
+P_2(c) = sum over directions d of w_d · roll_value(min(reach(c,d), 7))
+```
+with e.g. `w_d = 0.25` uniform. This captures that a cell with long reach in two directions (an "intersection") is more flexible than one with only one direction. Risks double-counting: two rolls from `c` cost more prime turns than one.
+
+**Candidate B.3 — Flexibility-weighted sum:**
+```
+P_3(c) = max_d roll_value(reach(c,d))   +   λ · (second_best_d roll_value(reach(c,d)))
+```
+with `λ ≈ 0.3`. First term is the "primary shot". Second term is a "flexibility bonus" for cells with two good options (robust against opponent blocking). Recommended default for the Phase-3 implementation.
+
+**Candidate B.4 — Distance-discounted (Carrie-style):**
+```
+P_4(c) = P_base(c) / (1 + α · manhattan_dist(worker, c))
+```
+with `α ∈ [0.2, 0.5]`. Values *reachable* potential more than far-away potential, because a far-away opportunity costs turns to reach. This matches the assignment's phrase "cell potential × distance from bot". Two interpretations:
+- **Interpretation 1 (per-cell max):** `H = max_c P_base(c) / (1 + α · dist)` — single best future opportunity.
+- **Interpretation 2 (weighted sum):** `H = Σ_c P_base(c) / (1 + α · dist)` — total territory accessible.
+
+Interpretation 2 is richer but slower. Interpretation 1 is fast and probably what Carrie does.
+
+**Candidate B.5 — Opponent-adjusted potential:**
+```
+P_5(c) = P_4(c) · (1 − β · P_opp_reaches_first(c))
+```
+where `P_opp_reaches_first(c) ≈ 1` if opponent is strictly closer to `c` by Manhattan, `0.5` if tied, `0` if we're strictly closer. Penalizes lines the opponent can eat first (either by rolling a prime line we started, or by plain-stepping into the empty space and priming first).
+
+### B.2 Recommended default
+
+`P_3` composed with `P_4`'s distance discount and `P_5`'s opponent adjustment:
+
+```
+P(c) = [max_d roll_value(min(reach(c,d), 7))
+        + λ · second_best_d roll_value(min(reach(c,d), 7))]
+       · (1 − β · P_opp_first(c))
+       / (1 + α · dist(worker, c))
+```
+
+with starting guesses `λ = 0.3`, `α = 0.3`, `β = 0.5`. Board-level summary:
+
+- **`H_cell = max_c P(c)`** (our best future shot)
+- **`H_cell_opp = max_c P(c | worker = opponent)`** (their best future shot)
+- Use `H_cell − H_cell_opp` as a differential feature.
+
+### B.3 Interpreting "cell potential × distance from bot"
+
+The phrase is ambiguous. Three plausible readings:
+
+1. **Product (elementwise):** `H = Σ_c potential(c) · f(dist(bot, c))` with `f` *decreasing* — Carrie values a rich cell near the bot, discounts rich cells far away. Matches reading 2 above.
+2. **Product (scalar):** `H = max_c potential(c) · f(dist)` — single best reachable opportunity.
+3. **Literal multiplication:** `H = Σ_c potential(c) · dist(bot, c)` with `f(d) = d` — this would value far cells *more* than near ones, which is nonsensical for a time-pressured bot. Almost certainly **not** what Carrie does.
+
+**Our working assumption: reading 1.** It generalizes the "territory control" concept from Go/Risk to this game.
+
+### B.4 Cost of computing P(c)
+
+Naively, `P(c)` for all 64 cells requires 4 ray scans from each cell = 4·64 = 256 ray traces. Each ray is up to 7 cells. Total ≈ 1800 ops per heuristic call. At ~6 s/move budget and expectiminimax reaching ~10k leaves, that's 18M ops, manageable if written in numpy/bitboard style. **Precompute the 4 direction rays as 64×4 arrays of (reach_length, roll_value)** per board-state and reuse. Better: incremental update when only one cell changes.
+
+---
+
+## Section C — Feature list for a linear / small-NN evaluator
+
+The heuristic is called at every leaf of expectiminimax. It must be fast. A linear blend of well-chosen features is our baseline.
+
+### C.1 Primary features (MUST HAVE — these are the ~7 features the linear heuristic needs)
+
+| # | Name | Formula | Rationale |
+|---|---|---|---|
+| F1 | **score_diff** | `ours.points − theirs.points` | The ground truth. At terminal nodes this *is* the answer. Away from terminal, it's a lower bound on future. |
+| F2 | **turns_left** | `ours.turns_left` | Multiplier on how much future potential matters. At `turns_left=0`, only F1 matters. |
+| F3 | **our_cell_potential** | `max_c P(c)` from §B.2 (our worker) | Biggest future roll we can realistically score. |
+| F4 | **opp_cell_potential** | `max_c P(c)` (from opp perspective) | Mirror of F3; predicts what they'll score. |
+| F5 | **our_prime_owned** | count of bits in `primed_mask ∩ our_primes_history` | Already-primed cells we can still roll (primes = +1 already banked; roll will convert them to pts per table). In practice this is hard to track without history because `primed_mask` doesn't record *who* primed. Use proxy: count of primed cells within our immediate rollable neighborhood. |
+| F6 | **carpeted_count** | count of bits in `carpet_mask` | Frozen-in territory, mostly informational (already scored). Weak feature but useful for timeout / tempo. |
+| F7 | **rat_belief_max** | `max_c belief[c]` | Peak belief concentration. If > 1/3, a search is +EV *right now*. |
+
+### C.2 Secondary features (NICE TO HAVE, add to push from Albert to Carrie tier)
+
+| # | Name | Formula | Rationale |
+|---|---|---|---|
+| F8 | **rat_belief_entropy** | `−Σ belief[c] · log(belief[c])` | Low entropy = search is high-EV. Used for information-value search decisions. |
+| F9 | **our_longest_primable** | max over dirs `d` of `reach(worker_pos, d)` | Directly estimates the next roll length we can achieve. |
+| F10 | **opp_longest_primable** | same for opponent | Mirror of F9. |
+| F11 | **our_worker_mobility** | count of valid non-search moves | Mobility is survival; if we can't move we lose (invalid-move loss). Dramatic penalty when mobility ≤ 2. |
+| F12 | **opp_worker_mobility** | same for opponent | Dual of F11. Negative correlation with win prob if theirs is low (we want them stuck). |
+| F13 | **center_control** | `-manhattan(worker, (3.5, 3.5))` | Workers near the center can prime in any direction; corners are trapped. |
+| F14 | **blocker_proximity_penalty** | `max(0, 2 − min_dist_to_blocker)` | Being next to a blocker cuts your reach — slight negative. |
+| F15 | **expected_search_value** | `max(0, 4·p_max − 2·(1−p_max))` where `p_max` = F7 | EV of the best single search; used to decide whether to take search action. |
+| F16 | **carpet_owned_by_us_reachable** | primed/carpet cells we could still roll | Opponent primes are *free rolls* for us if we reach them first. |
+
+### C.3 Features to avoid (or use with care)
+
+- **Raw `primed_mask` bit count** — misleading: primes are +1 each *and* liability (can't walk on them). Same count can be good or bad depending on whether *we* can roll them.
+- **Static distance to opponent worker** — this is not chess; no check/checkmate. Distance to opponent matters only for resource-contention (F5/F16).
+- **Historical move counts** — fine for logging but too brittle for heuristics.
+
+### C.4 Feature-extraction cost estimates
+
+| Feature | Cost (ops) | Comments |
+|---|---|---|
+| F1, F2 | O(1) | Direct field reads |
+| F3, F4 | O(64·4) ≈ 256 | Ray scans (precompute once per leaf) |
+| F5, F16 | O(64) | Bitmask pop + ray |
+| F6 | O(1) | popcount of carpet_mask |
+| F7, F8, F15 | O(64) | Belief iteration |
+| F9, F10 | O(4) | Only from worker position |
+| F11, F12 | O(1) | `get_valid_moves` count |
+| F13, F14 | O(1) | Scalar arithmetic |
+
+Total per heuristic call: **~500 ops**. At 10k leaves/move, that's 5M ops — well within budget.
+
+---
+
+## Section D — Adversarial heuristic considerations
+
+### D.1 Shared primes — both players can roll any primed line
+
+This is the single biggest asymmetry in the game: **primes are not owned**. If our bot primes cells `(3,3), (3,4), (3,5)` and the opponent walks over to `(3,6)`, they can carpet-roll our 3 primes for +4 points. Our prime cost (+3 turns) becomes **their** gain.
+
+**Heuristic implication:** when scoring a position with N of our primes laid out, discount by `P(opp_rolls_first)`. A rough model:
+
+```
+P_we_roll_line_L_first = 1 if our_dist_to_roll_start < opp_dist_to_roll_start else 0
+```
+
+where `roll_start` is either endpoint of the primed run. Replace F5 with:
+
+```
+F5' = sum over our primed lines L of (line_value(L) · P_we_roll_first(L))
+    − sum over same lines of (line_value(L) · (1 − P_we_roll_first(L)))
+```
+
+The (1 − P) term is double-discounted because we paid the prime cost *and* gave them the roll.
+
+### D.2 Opponent primes reachable by us
+
+Conversely, opponent-laid primes within our Manhattan reach are *free future points*. Add to F16. Rule of thumb: if opponent primes are on row/col `L` with length `k`, and we're closer to `L`'s endpoint:
+
+```
+bonus = roll_value(k) · P(we_reach_first(L))
+```
+
+This means a strong heuristic actually **welcomes** opponent priming in our direction — a counterintuitive but important signal.
+
+### D.3 Blocking play
+
+A purely defensive move: prime cells in a way that breaks opponent's long lines. If the opponent is building a k=5 line, dropping a prime between their head and end reduces them to two k=2 lines = 4 pts instead of 15. This is captured by F4 (opp_cell_potential) going down after our prime — so the heuristic naturally rewards blocking without an explicit feature, provided F4 looks at their perspective.
+
+### D.4 Tempo
+
+If it's our turn and we can trigger a +6 roll now vs their expected +4 next turn, we prefer ours-first (tempo matters). Expectiminimax already captures this via depth. The heuristic doesn't need an explicit tempo feature provided F1 and F3/F4 are evaluated from the "to-move" side.
+
+---
+
+## Section E — Rat-search heuristic
+
+Rat search is a different beast: no worker motion, direct ±2/±4 outcome, information value on the belief grid.
+
+### E.1 Immediate-EV calculation
+
+Let `p = belief[(x,y)]`:
+- EV(search @ (x,y)) = `4·p − 2·(1 − p) = 6p − 2`.
+- Break-even: `p ≥ 1/3`.
+- At `p = 1`: EV = +4 (rare).
+
+### E.2 Value of information beyond immediate EV
+
+Search also updates the HMM belief grid with a hard observation (correct → collapse to delta on that cell, wrong → zero that cell and renormalize). This is useful for *future* searches. The information-value of a wrong search is the entropy reduction:
+
+```
+InfoValue(search @ c) = H(belief) − E[H(belief | search outcome)]
+                     ≈ (1−p) · log(1/(1−p))  for small p
+```
+
+For **our heuristic**, combining:
+
+```
+heuristic_search_value(c) = (6p − 2) + γ · InfoValue(c)
+```
+
+with `γ ≈ 0.5` as a starting weight. This pushes the bot to take slightly-negative-EV searches early in the game to sharpen belief for later high-EV searches.
+
+### E.3 When to wait
+
+If all beliefs are below 1/3 AND the rat is likely to continue mixing (i.e., `T^k · belief` stays diffuse for several steps), the best immediate action is to **prime+roll** while passively letting sensor readings sharpen the belief. The heuristic encodes this by making F15 (expected_search_value) competitive with F3 (cell_potential) only when p_max is high.
+
+Rule of thumb for the integrator: take a search move only if `heuristic_search_value > α_search · H_cell` with `α_search ≈ 0.3`. Otherwise stick with movement.
+
+### E.4 Search-move competes with prime for turn budget
+
+40 turns is tight. A search spent on p=0.4 EV = +0.4 is less efficient than a prime (which on average earns part of a +4 to +21 future roll). Reserve searches for *decisive* moments: p > 0.5, or endgame (fewer turns left for priming, so information-value dominates).
+
+---
+
+## Section F — Three candidate heuristic architectures
+
+Each is a tradeoff between implementation speed and expected ELO gain. Assume the expectiminimax + HMM backbone is given.
+
+### F.1 Architecture F1 — Handcrafted linear blend (baseline)
+
+```
+h(board) = w1·F1 + w3·F3 − w4·F4 + w5·F5 + w7·F7 + w9·F9 − w10·F10 + w11·F11 − w12·F12
+```
+
+**Feature set:** F1, F3, F4, F5, F7, F9, F10, F11, F12 (nine features from §C).
+**Weights (starting guess):**
+- w1 = 1.0 (score diff is unit)
+- w3 = 0.8 (cell potential, per-point)
+- w4 = 0.8 (mirror)
+- w5 = 0.5 (discounted primes)
+- w7 = 2.0 (peak belief × search bonus)
+- w9 = 0.3 (longest primable)
+- w10 = 0.3 (mirror)
+- w11 = 0.5 (mobility)
+- w12 = 0.5 (mirror)
+
+**Training procedure:** hand-tune by running 50-match tournaments vs George/Albert and nudging weights. No gradient; pure local search. Expected tuning time: 2–4 hours wall-clock once match-runner exists.
+
+**Expected performance:** beats Yolanda easily, beats George comfortably, competitive with Albert (possibly wins majority). Probably **falls short of Carrie** because of linear bias (no interaction terms).
+
+**Implementation time:** 2–3 hours for features + 1h glue.
+
+**Risk:** low. This is the safe floor.
+
+### F.2 Architecture F2 — Linear heuristic with learned weights (recommended)
+
+Same feature set as F1, but weights optimized by **CMA-ES or Bayesian optimization** over self-play matches.
+
+**Objective:** maximize win-rate against a fixed opponent (our own F1 implementation, or George). Budget 500–1000 matches per generation, ~5–10 generations.
+
+**Why CMA-ES over gradient descent:** win-rate is a noisy, non-differentiable function of weights. CMA-ES handles this gracefully with ~20 samples per generation × 5 generations = 100 weight-vector evaluations × 50 matches each = 5000 matches. At ~5 s/match this is ~7 hours wall-clock; feasible but tight.
+
+**Alternative — regression to minimax-eval:** play a handful of deep (depth-6) searches, extract leaf evaluations from the minimax bubbling, and fit features to those targets via linear regression. Much cheaper; weight quality depends on how consistent the deep-search evaluations are.
+
+**Expected performance:** **this is the realistic path to beating Carrie.** Self-play-tuned linear heuristics have repeatedly shown they can match hand-tuned ones with zero expert bias. Expect +50–100 ELO over F1.
+
+**Implementation time:** 4–6h for the tuning harness + 6–10h of self-play compute.
+
+**Risk:** medium. Tuning harness can have bugs; stochastic board means high variance. Mitigation: run a paranoid sanity ablation after tuning (set all new weights to 0, verify bot still plays sensibly).
+
+### F.3 Architecture F3 — Small NN over features
+
+Inputs: 10–15 features from §C. Hidden: 32 units, tanh. Output: 1 scalar.
+
+**Training:** either
+- (a) **Policy-gradient** on self-play outcomes. Long training time, high variance.
+- (b) **Regression** on bootstrapped minimax evaluations (similar to AlphaZero's value network, minus the policy head).
+
+**Why it could win:** captures interactions that linear can't — e.g., "cell potential is only valuable if worker has mobility" (F3 × F11). Carrie likely *doesn't* do this, so it's a potential leapfrog.
+
+**Why it's risky given 3-day deadline:**
+- Training pipeline is nontrivial (self-play generation + target computation + torch fitting + weight export).
+- Potential for overfitting / distribution shift.
+- 32-unit NN evaluated 10k times/move = 320k multiply-adds; fast in numpy but might push us over the per-move budget if other parts are slow.
+
+**Expected performance:** **highest ceiling** (could approach Carrie+100 ELO), also **highest variance** (could underperform F1 if undertrained).
+
+**Implementation time:** 12–20h including training. **Not recommended** as the primary plan given deadline; consider as Phase 5 iteration if F2 lands early.
+
+### F.4 Side-by-side comparison
+
+| Architecture | Features | Training | Expected ELO vs Albert | Implementation hours | Risk |
+|---|---|---|---|---|---|
+| F1 linear handcrafted | 9 | none | +0 to +50 | 3–5 | Low |
+| F2 linear CMA-ES | 9–12 | self-play | +50 to +150 | 10–15 | Medium |
+| F3 small NN | 10–15 | regression on deep-search | +100 to +200 *or* negative | 15–25 | High |
+
+**Recommendation: Build F1 first, ablate, then graduate to F2.** F3 only if both land early and have spare compute.
+
+---
+
+## Section G — Open choices for Strategy-Architect
+
+These are decisions the heuristic design explicitly defers to the strategy blueprint.
+
+### G.1 Must-have vs nice-to-have feature set
+
+**Must have (no debate):** F1 (score_diff), F3 (our_cell_potential), F4 (opp_cell_potential), F7 (rat_belief_max).
+
+**Strongly recommended:** F5 (prime ownership with opp-first discount), F9/F10 (longest primable), F11/F12 (mobility), F15 (search EV).
+
+**Debatable (tune or drop):** F6 (carpet count — low signal), F13 (center control — implicit in F3), F14 (blocker proximity — implicit in F3), F8 (belief entropy — only adds value for search-vs-prime trade-off).
+
+Recommendation: start with 9 features (the "must + strongly recommended" list). Add F8 if search-timing is weak in playtesting.
+
+### G.2 Handcrafted vs learned weights (the ~72h question)
+
+- **If you trust the match-runner is solid by hour 24:** go F2. Reserve hours 40–55 for CMA-ES, hour 55+ for validation.
+- **If match-runner is flaky or late:** stay on F1. 50 ELO below Carrie is better than 200 ELO below because CMA-ES diverged.
+- **Hybrid:** seed CMA-ES with F1's handcrafted weights as the mean; tight sigma. Means even if CMA-ES runs out of compute, the fallback is the hand-tuned baseline.
+
+### G.3 How to regularize / ablate
+
+- **Ablation protocol:** for each feature, run 50 matches with its weight zeroed. If win-rate drops < 2%, drop the feature.
+- **Regularization for F2:** L2 penalty on weights during CMA-ES (keeps weights bounded; prevents one feature from swamping others when the "real" signal is elsewhere).
+- **Regularization for F3:** dropout on hidden layer; early-stopping on validation match-batch.
+- **Cross-validation:** hold out a set of opponents (e.g., train vs George, validate vs Albert-emulator) to detect overfitting to specific opponent style.
+
+### G.4 Heuristic evaluation side (whose turn? perspective?)
+
+Convention: heuristic is always computed from "the side to move" perspective, returning **positive = good for side to move**. At the leaf of expectiminimax, the driver code knows whose side to negate. This is the cleanest pattern and matches chess-engine conventions. The researcher recommends this; Strategy-Architect to confirm in ARCHITECTURE.md.
+
+### G.5 Belief-grid interaction with heuristic
+
+The heuristic needs belief access for F7, F8, F15. Options:
+- **Option a:** pass belief as a separate argument to the heuristic; expectiminimax tracks it in parallel with the board.
+- **Option b:** store belief inside the forecast-board copies (more copies, slower).
+
+Option (a) is cheaper and decouples concerns. Confirmed recommendation.
+
+---
+
+## Summary — The single takeaway
+
+**Carrie's advantage over Albert = better `P(c)` with a distance term.** We reproduce that in §B.2 with the formula:
+
+```
+P(c) = [best_roll(c) + 0.3 · second_best_roll(c)] · (1 − 0.5 · P_opp_first(c)) / (1 + 0.3 · dist(worker, c))
+```
+
+Used as features F3 and F4 in a 9-feature linear heuristic (Architecture F2) with CMA-ES-tuned weights, this is the straight path to the 90% tier. Everything else — NNs, opening books, endgame tablebases — is upside, not the main bet.
+
+---
+
+## References
+
+- `assignment.pdf` §9 (grading) and §7 (bot descriptions) — authoritative on reference-bot levels.
+- `engine/game/enums.py::CARPET_POINTS_TABLE` — exact scoring table used in §A.
+- `engine/game/board.py::apply_move` — confirms prime=+1, roll gives CARPET_POINTS_TABLE[k].
+- `engine/game/rat.py` (per CLAUDE.md) — noise model driving F7/F8/F15.
+- CS3600 lecture on Expectiminimax (cited in assignment Appendix A).
+- Sebastian Lague chess-bot series (referenced in assignment) — move-ordering and heuristic blending patterns.
+- General ML literature: CMA-ES (Hansen & Ostermeier 2001) for F2 weight tuning.
