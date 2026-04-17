@@ -285,14 +285,23 @@ def test_symmetry():
     assert feats_fwd[9] < 21 * 64
     assert feats_fwd[10] < 21 * 64
     assert feats_fwd[11] < 21 * 64
+    # F17 (dead-prime count) is an integer count in [0, 64]. Not
+    # meaningfully perspective-symmetric in v0.3.1 (uses our worker's
+    # reach + global primed mask); just check bounds.
+    assert 0.0 <= feats_fwd[12] <= 64.0
+    assert 0.0 <= feats_rev[12] <= 64.0
+    # F18 (opp-belief entropy) is in [0, ln 64]. Perspective-invariant
+    # for a fresh default board (opp_search=(None, False)).
+    assert 0.0 <= feats_fwd[13] <= math.log(64) + 1e-9
+    assert 0.0 <= feats_rev[13] <= math.log(64) + 1e-9
 
 
 def test_per_call_timing():
-    """p99 per-call should be <= 150 µs on 10k random boards (v0.2 budget
-    bumped from 100 us for the 9-feature vector per team-lead T-20c brief).
+    """p99 per-call should be <= 200 µs on 10k random boards (v0.3.1 budget
+    bumped from 150 us for the 14-feature vector per team-lead T-30b brief).
 
-    Uses time.perf_counter_ns(). Soft-warns if p99 > 150 µs but hard-fails
-    if median is > 150 µs — that indicates an actual algorithmic regression.
+    Uses time.perf_counter_ns(). Soft-warns if p99 > 200 µs but hard-fails
+    if median is > 200 µs — that indicates an actual algorithmic regression.
     """
     rng = random.Random(0xBEEF)
     n = 10_000
@@ -316,7 +325,7 @@ def test_per_call_timing():
         f"p50={p50:.1f}us  p99={p99:.1f}us  max={p100:.1f}us"
     )
 
-    BUDGET_US = 150.0
+    BUDGET_US = 200.0
     assert p50 < BUDGET_US, (
         f"median eval time {p50:.1f}us exceeds {BUDGET_US}us budget"
     )
@@ -358,7 +367,9 @@ def test_high_max_belief_triggers_search_signal():
     # Magnitude sanity: the drop should be at least |delta_f11| minus
     # F12 jitter (entropy goes down too when belief is peaky, and
     # W_INIT[6] is negative, so that adds a positive offset). F13 also
-    # shifts a little because peaky COM ≠ uniform COM.
+    # shifts a little because peaky COM ≠ uniform COM. F18 = belief
+    # entropy when opp didn't search (default board), so it also tracks
+    # the entropy delta.
     observed_drop = v_low - v_high
     delta_f12 = W_INIT[6] * (bs_high.entropy - bs_low.entropy)
     # F13 delta: Manhattan(worker, COM_high) - Manhattan(worker, COM_low)
@@ -366,7 +377,11 @@ def test_high_max_belief_triggers_search_signal():
     d13_low = abs(wx - bs_low.com_x) + abs(wy - bs_low.com_y)
     d13_high = abs(wx - bs_high.com_x) + abs(wy - bs_high.com_y)
     delta_f13 = W_INIT[8] * (d13_high - d13_low)
-    analytical = -(delta_f11 + delta_f12 + delta_f13)
+    # F18 delta: default board has opponent_search = (None, False), so
+    # F18 falls back to belief.entropy — exact same delta as F12 but
+    # weighted by W_INIT[13].
+    delta_f18 = W_INIT[13] * (bs_high.entropy - bs_low.entropy)
+    analytical = -(delta_f11 + delta_f12 + delta_f13 + delta_f18)
     assert abs(observed_drop - analytical) < 1e-6, (
         f"eval delta {observed_drop} diverged from analytical "
         f"{analytical} — are F5/F7/F8 varying unexpectedly?"
@@ -542,6 +557,152 @@ def test_p_vec_zero_on_blocked_cells():
     p_vec = _cell_potential_vector(board)
     assert p_vec[0 * BOARD_SIZE + 0] == 0.0  # (0,0)
     assert p_vec[7 * BOARD_SIZE + 7] == 0.0  # (7,7)
+
+
+def test_f17_dead_prime_count_basic():
+    """F17 counts primed cells that are (a) reachable within turns_left
+    Manhattan, AND (b) isolated (no primed cardinal neighbor).
+    """
+    from RattleBot.heuristic import _count_dead_primes
+    board = _fresh_board(
+        player_pos=(3, 3), opp_pos=(5, 3), blockers=False
+    )
+    board.player_worker.turns_left = 20
+    # Isolated primes (no primed neighbor) within Manhattan 20:
+    board.set_cell((2, 2), Cell.PRIMED)
+    board.set_cell((6, 6), Cell.PRIMED)
+    # Adjacent pair — NOT dead.
+    board.set_cell((4, 4), Cell.PRIMED)
+    board.set_cell((4, 5), Cell.PRIMED)
+    assert _count_dead_primes(board) == 2, (
+        f"expected 2 dead primes, got {_count_dead_primes(board)}"
+    )
+    feats = features(board, _uniform_belief_summary())
+    assert feats[12] == 2.0
+
+
+def test_f17_unreachable_prime_is_not_counted():
+    """A prime at Manhattan distance > turns_left should NOT count."""
+    from RattleBot.heuristic import _count_dead_primes
+    board = _fresh_board(
+        player_pos=(3, 3), opp_pos=(0, 0), blockers=False
+    )
+    board.player_worker.turns_left = 5
+    # (2,2) is Manhattan 2 from (3,3) -> reachable.
+    board.set_cell((2, 2), Cell.PRIMED)
+    # (7,7) is Manhattan 8 from (3,3) -> not reachable at turns_left=5.
+    board.set_cell((7, 7), Cell.PRIMED)
+    assert _count_dead_primes(board) == 1, (
+        f"expected 1 (only (2,2) reachable), got "
+        f"{_count_dead_primes(board)}"
+    )
+
+
+def test_f17_zero_when_no_primes():
+    """Empty board: F17 = 0."""
+    from RattleBot.heuristic import _count_dead_primes
+    board = _fresh_board()
+    board.player_worker.turns_left = 40
+    assert _count_dead_primes(board) == 0
+    feats = features(board, _uniform_belief_summary())
+    assert feats[12] == 0.0
+
+
+def test_f17_prime_chain_has_zero_dead():
+    """A line of 4 adjacent primes should have 0 dead cells (each has
+    at least one primed neighbor)."""
+    from RattleBot.heuristic import _count_dead_primes
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(7, 7), blockers=False
+    )
+    board.player_worker.turns_left = 40
+    for x in range(3, 7):
+        board.set_cell((x, 4), Cell.PRIMED)
+    assert _count_dead_primes(board) == 0
+
+
+def test_f18_no_opp_search_falls_back_to_entropy():
+    """When opp didn't search last ply, F18 should equal the belief
+    entropy directly (no subtraction)."""
+    from RattleBot.heuristic import _opp_belief_entropy
+    board = _fresh_board()
+    # Default opponent_search is (None, False).
+    bs = _uniform_belief_summary()
+    f18 = _opp_belief_entropy(board, bs)
+    assert abs(f18 - bs.entropy) < 1e-12
+
+
+def test_f18_opp_miss_raises_entropy_for_peaky_belief():
+    """If opp searched the argmax cell and missed, zeroing that cell
+    and renormalising makes the belief FLATTER (higher entropy)."""
+    from RattleBot.heuristic import _opp_belief_entropy
+    board = _fresh_board()
+    # Peaky belief at index 27 with mass 0.9.
+    bs_peaky = _peaky_belief_summary(27, 0.9)
+    # Opp searched the peak and missed.
+    board.opponent_search = ((27 % BOARD_SIZE, 27 // BOARD_SIZE), False)
+    f18 = _opp_belief_entropy(board, bs_peaky)
+    # Pre-miss entropy was low (belief concentrated); post-miss the
+    # uniform remaining mass over 63 cells ≈ ln(63) ≈ 4.143.
+    assert f18 > bs_peaky.entropy, (
+        f"expected post-miss entropy ({f18}) > pre ({bs_peaky.entropy})"
+    )
+    # Analytical: after zeroing index 27 and renormalising the other
+    # 63 cells (each had mass (1-0.9)/63), the posterior is uniform
+    # over 63 cells → entropy = ln 63.
+    assert abs(f18 - math.log(63)) < 1e-9
+
+
+def test_f18_opp_hit_uses_current_entropy():
+    """A successful opp search means the rat was respawned; the belief
+    has already been reset elsewhere (by rat_belief.handle_post_capture_
+    reset). F18 should just echo `belief_summary.entropy` — no extra
+    subtraction."""
+    from RattleBot.heuristic import _opp_belief_entropy
+    board = _fresh_board()
+    bs = _uniform_belief_summary()
+    board.opponent_search = ((3, 3), True)  # hit
+    f18 = _opp_belief_entropy(board, bs)
+    assert f18 == bs.entropy
+
+
+def test_f18_invalid_loc_falls_back():
+    """Defensive: an out-of-bounds loc (shouldn't happen per engine
+    contract, but) should not blow up — just fall back to current
+    entropy."""
+    from RattleBot.heuristic import _opp_belief_entropy
+    board = _fresh_board()
+    bs = _uniform_belief_summary()
+    # Out-of-bounds loc
+    board.opponent_search = ((99, 99), False)
+    f18 = _opp_belief_entropy(board, bs)
+    assert f18 == bs.entropy
+
+
+def test_f18_matches_recomputed_entropy():
+    """Numerical: hand-compute the miss-posterior entropy and compare
+    against the closed-form implementation."""
+    from RattleBot.heuristic import _opp_belief_entropy
+    # Construct a non-trivial belief with known entropy characteristics.
+    rng = random.Random(42)
+    raw = np.array([rng.random() for _ in range(64)], dtype=np.float64)
+    raw /= raw.sum()
+    bs = _bs_from_belief(raw)
+    # Opp missed at index 17.
+    miss_idx = 17
+    board = _fresh_board()
+    board.opponent_search = (
+        (miss_idx % BOARD_SIZE, miss_idx // BOARD_SIZE),
+        False,
+    )
+    f18 = _opp_belief_entropy(board, bs)
+    # Reference: zero + renormalise + entropy.
+    ref = raw.copy()
+    ref[miss_idx] = 0.0
+    ref /= ref.sum()
+    nz = ref > 0.0
+    ref_entropy = float(-np.sum(ref[nz] * np.log(ref[nz])))
+    assert abs(f18 - ref_entropy) < 1e-9
 
 
 def test_class_wrapper_matches_module_fn():
@@ -734,6 +895,15 @@ def _run_all():
         test_f15_exp_kernel_decays_faster_than_recip,
         test_f16_step_kernel_equals_p_sum_within_d_max,
         test_p_vec_zero_on_blocked_cells,
+        test_f17_dead_prime_count_basic,
+        test_f17_unreachable_prime_is_not_counted,
+        test_f17_zero_when_no_primes,
+        test_f17_prime_chain_has_zero_dead,
+        test_f18_no_opp_search_falls_back_to_entropy,
+        test_f18_opp_miss_raises_entropy_for_peaky_belief,
+        test_f18_opp_hit_uses_current_entropy,
+        test_f18_invalid_loc_falls_back,
+        test_f18_matches_recomputed_entropy,
         test_class_wrapper_matches_module_fn,
         test_weight_shape_validation,
         test_numba_kernels_match_python_reference,

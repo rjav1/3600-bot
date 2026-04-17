@@ -93,12 +93,19 @@ BOUNDS: List[Tuple[float, float]] = [
     (+0.0, +0.5),   # F14 cell_potential_recip (H1 1/(1+d))
     (+0.0, +0.5),   # F15 cell_potential_exp   (H2 exp(-0.5 d))
     (+0.0, +0.5),   # F16 cell_potential_step  (H6 1 iff d<=5)
+    # T-30b (v0.3.1) — F17/F18. F17 is an integer count in [0, 64] with
+    # typical mid-game value 0-5; negative weight (we never want more
+    # dead primes). F18 is entropy in [0, ln 64 ≈ 4.16]; positive weight
+    # (higher opp-entropy = opp can't profitably SEARCH = good for us).
+    (-1.5, +0.0),   # F17 priming_lockout  (dead-primes count)
+    (+0.0, +0.5),   # F18 opp_belief_proxy (opp-entropy after last search)
 ]
 
 # Hard-tuned default (matches RattleBot.heuristic.W_INIT).
 W_INIT: List[float] = [
     1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05,
     0.15, 0.10, 0.10,
+    -0.4, 0.1,
 ]
 
 # Light L2 regulariser pulling toward `w_init`. See §2.5 "Objective".

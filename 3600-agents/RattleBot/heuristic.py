@@ -1,4 +1,4 @@
-"""F2 linear leaf evaluator — v0.3 (12 features, multi-scale kernel + numba).
+"""F2 linear leaf evaluator — v0.3.1 (14 features, + F17/F18).
 
 9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c
 expanded by 3 distance-kernel features (T-20c.1) per
@@ -10,7 +10,9 @@ actual decay shape without us knowing it. v0.2.2 (T-20g) caches
 JIT-compiles the three hot functions (`_ray_reach`,
 `_cell_potential_for_worker`, `_cell_potential_vector`) using
 `@njit(cache=True)` with a pure-Python fallback behind the
-module-level `_USE_NUMBA` kill-switch.
+module-level `_USE_NUMBA` kill-switch. v0.3.1 (T-30b) adds **F17**
+priming-lockout (count of dead/isolated primes within our reach)
+and **F18** opp-belief-proxy (post-opp-search belief entropy).
 
 Features (all float64, sign-carried by W_INIT):
 
@@ -45,6 +47,30 @@ Features (all float64, sign-carried by W_INIT):
                                   Carrie-decay hypothesis H6 (step at
                                   D_max=5). No decay inside reach;
                                   zero outside.
+  F17 priming_lockout           = count of primed cells that are
+                                  (a) within Manhattan ≤ our_turns_left
+                                      of our worker (reachable before
+                                      game end); AND
+                                  (b) have NO primed cardinal neighbor
+                                      (i.e. can only be rolled as k=1
+                                      for −1 point — strictly dominated,
+                                      see CARPET_POINTS_TABLE[1] = -1).
+                                  These are "dead primes" on our side.
+                                  Negative weight — we paid +1 to prime
+                                  them but can only extract −1 by rolling.
+  F18 opp_belief_proxy          = Shannon entropy of the rat-belief
+                                  distribution AFTER updating it against
+                                  the opponent's last search outcome.
+                                  Higher = opponent more uncertain about
+                                  rat location = good for us (POSITIVE
+                                  weight). If opp did not search, or
+                                  searched and hit (which would have
+                                  reset the belief), F18 collapses to
+                                  belief_summary.entropy. (Note: the
+                                  engine only exposes one-ply opp search
+                                  history via `board.opponent_search`;
+                                  a richer multi-ply history tracker is
+                                  v0.4+.)
 
   P(c) = best-roll-value-if-worker-stood-at-c (ray scan through
          BLOCKED/CARPET/opp-worker blockers, Manhattan-extended using
@@ -53,7 +79,7 @@ Features (all float64, sign-carried by W_INIT):
 Public API (module-level):
 
     evaluate(board, belief_summary, weights=None) -> float
-    features(board, belief_summary) -> np.ndarray   # shape (12,) float64
+    features(board, belief_summary) -> np.ndarray   # shape (14,) float64
 
 A thin Heuristic class is kept for downstream consumers (search engine).
 
@@ -122,7 +148,7 @@ def is_numba_active() -> bool:
     return bool(_USE_NUMBA and _NUMBA_AVAILABLE)
 
 
-N_FEATURES: int = 12
+N_FEATURES: int = 14
 
 # Terminal eval = (player_points - opp_points) * TERMINAL_SCALE.
 # Chosen >> any realistic non-terminal eval so minimax always prefers
@@ -172,9 +198,19 @@ GAMMA_RESET: float = 0.3
 #                     at carpet_value(7)=21.)
 #  10   F15   +0.10   Σ P(c)·exp(-0.5 d): Carrie-decay H2 (exponential).
 #  11   F16   +0.10   Σ_{d≤5} P(c): Carrie-decay H6 (step at D_max=5).
+#  12   F17   -0.4    dead primes on our side. Each isolated-and-reachable
+#                     prime costs +1 (paid) and earns at most -1 (roll
+#                     k=1) = net -2 pts over 3 turns; -0.4 is roughly
+#                     scaled to that penalty (BO will retune).
+#  13   F18   +0.1    opp-belief entropy after their last search. Positive
+#                     — higher entropy means opp is more uncertain, so
+#                     they can't profitably SEARCH next turn. Small
+#                     magnitude because entropy units are nats in
+#                     [0, ln 64] ≈ [0, 4.16], similar scale to F12.
 #
 W_INIT: np.ndarray = np.array(
-    [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05, 0.15, 0.10, 0.10],
+    [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05, 0.15, 0.10, 0.10,
+     -0.4, 0.1],
     dtype=np.float64,
 )
 assert W_INIT.shape == (N_FEATURES,)
@@ -688,10 +724,122 @@ def _belief_com_distance(
     return abs(wx - cx) + abs(wy - cy)
 
 
+def _count_dead_primes(board: board_mod.Board) -> int:
+    """F17 helper: count primed cells that are (a) reachable by our
+    worker before game end, AND (b) isolated from other primes (no
+    primed cardinal neighbor).
+
+    "Reachable" = Manhattan distance from our worker to the primed cell
+    ≤ `player_worker.turns_left`. "Isolated" = no UP/DOWN/LEFT/RIGHT
+    neighbor is also PRIMED (such a cell can only be rolled as k=1 for
+    −1 point, so it's a strict net loss given the +1 priming cost).
+
+    Returns an int in [0, 64]. Typical mid-game value is 0-3.
+    """
+    primed = board._primed_mask
+    if primed == 0:
+        return 0
+    wx, wy = board.player_worker.position
+    turns_left = int(board.player_worker.turns_left)
+
+    count = 0
+    for idx in range(_BOARD_CELLS):
+        bit = 1 << idx
+        if not (primed & bit):
+            continue
+        px = idx % BOARD_SIZE
+        py = idx // BOARD_SIZE
+        # Reachability filter: Manhattan dist ≤ turns_left.
+        if abs(px - wx) + abs(py - wy) > turns_left:
+            continue
+        # Isolation check: any primed cardinal neighbor?
+        has_primed_neighbor = False
+        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            nx, ny = px + dx, py + dy
+            if not (0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE):
+                continue
+            nbit = 1 << (ny * BOARD_SIZE + nx)
+            if primed & nbit:
+                has_primed_neighbor = True
+                break
+        if not has_primed_neighbor:
+            count += 1
+    return count
+
+
+def _opp_belief_entropy(
+    board: board_mod.Board, belief_summary: BeliefSummary
+) -> float:
+    """F18 helper: entropy of the rat belief after absorbing the
+    opponent's last SEARCH outcome.
+
+    Behaviour per GAME_SPEC §5:
+      - If opp's last ply was SEARCH @ loc and MISSED, the engine already
+        respawns nothing but the opp *knows* loc is empty; we model the
+        opp's posterior by zeroing `belief[loc]` and renormalising.
+      - If opp searched and HIT, the rat was respawned (belief already
+        reset to p_0 by rat_belief.handle_post_capture_reset); opp's
+        belief collapses to the same p_0. We just return the current
+        entropy.
+      - If opp did not search, return `belief_summary.entropy` unchanged.
+
+    This is a *one-ply* approximation. The engine exposes only the last
+    opp-search via `board.opponent_search`; multi-ply history would need
+    an agent-side tracker. Flagged as v0.4+ in the module docstring.
+
+    Returns a scalar in [0, ln 64].
+    """
+    opp_search = board.opponent_search
+    # opp_search is (loc or None, result_bool).
+    if (
+        opp_search is None
+        or opp_search[0] is None
+        or opp_search[1]  # hit — belief was reset; no miss-subtraction
+    ):
+        return float(belief_summary.entropy)
+
+    loc = opp_search[0]
+    # Validate bounds defensively.
+    if not (
+        isinstance(loc, tuple) and len(loc) == 2
+        and 0 <= loc[0] < BOARD_SIZE and 0 <= loc[1] < BOARD_SIZE
+    ):
+        return float(belief_summary.entropy)
+
+    b = belief_summary.belief
+    miss_idx = loc[1] * BOARD_SIZE + loc[0]
+    missed = float(b[miss_idx])
+    remaining = 1.0 - missed
+    if remaining <= 0.0:
+        # Opp's miss is inconsistent with our belief (all mass was on
+        # that cell). Fall back to current entropy rather than blow up.
+        return float(belief_summary.entropy)
+    # Renormalised miss-posterior: zero miss_idx, divide the rest by
+    # `remaining`. Entropy = -Σ p' log p' where p' = b_i / remaining
+    # for i != miss_idx.
+    # Expand:
+    #   entropy_new = -(1/rem) Σ_{i≠m} b_i · (log b_i - log rem)
+    #               = -(1/rem) [S_excl - log(rem) · remaining]
+    #               = log(rem) - S_excl / rem
+    # where S_excl = Σ_{i≠m, b_i>0} b_i · log b_i.
+    # Relate to the cached entropy: let S = Σ_i b_i log b_i = -entropy.
+    # Then S_excl = S - b_m log b_m = -entropy - b_m log b_m.
+    # (b_m log b_m is negative when 0 < b_m < 1, so subtracting it
+    # raises S_excl above -entropy, as expected when we remove mass.)
+    if missed > 0.0:
+        s_excl = -float(belief_summary.entropy) - missed * np.log(missed)
+    else:
+        s_excl = -float(belief_summary.entropy)
+    entropy_new = np.log(remaining) - s_excl / remaining
+    if entropy_new < 0.0:  # guard against fp rounding at 0 boundary
+        entropy_new = 0.0
+    return float(entropy_new)
+
+
 def features(
     board: board_mod.Board, belief_summary: BeliefSummary
 ) -> np.ndarray:
-    """Compute the 12-feature vector (float64) from the perspective of
+    """Compute the 14-feature vector (float64) from the perspective of
     `board.player_worker`. Fast path for leaf eval.
 
     No allocation beyond the returned array; all sub-calculations reuse
@@ -737,6 +885,14 @@ def features(
     out[10] = float(np.dot(p_vec, _KERNEL_EXP[worker_idx]))
     out[11] = float(np.dot(p_vec, _KERNEL_STEP[worker_idx]))
 
+    # F17 — priming-lockout: dead primes on our side of the board.
+    out[12] = float(_count_dead_primes(board))
+
+    # F18 — opp-belief proxy: entropy of the rat belief after opp's
+    # last search outcome is absorbed. Pure Python, O(1) arithmetic
+    # (no full 64-element copy).
+    out[13] = _opp_belief_entropy(board, belief_summary)
+
     return out
 
 
@@ -756,8 +912,8 @@ def evaluate(
     Non-terminal:
         return float(dot(weights or W_INIT, features(board, belief_summary)))
 
-    Time budget: p99 <= 150 us over 10k random boards at 9 features
-    (v0.2 bumped from 100 us in v0.1; see tests).
+    Time budget: p99 <= 200 us over 10k random boards at 14 features
+    (v0.3.1 bumped from 150 us for F17/F18 tail; see tests).
     """
     if board.is_game_over():
         return TERMINAL_SCALE * float(
