@@ -1,6 +1,8 @@
-# BO_TUNING.md — Bayesian-optimisation weight tuning (T-20d)
+# BO_TUNING.md — Bayesian-optimisation weight tuning (T-20d + T-20c.1)
 
-**Status:** v0.2 pipeline shipped 2026-04-17; results pending a full run.
+**Status:** v0.2.1 pipeline shipped 2026-04-17. Search space expanded
+from 9 → 12 dims with the multi-scale distance-kernel superset per
+CARRIE_DECONSTRUCTION §5.
 **Owner:** dev-heuristic.
 **Source:** `tools/bo_tune.py`, `tools/test_bo_tune.py`.
 **Addendum:** `docs/plan/BOT_STRATEGY_V02_ADDENDUM.md` §2.5 and D-009.
@@ -9,9 +11,12 @@
 
 ## 1. What this pipeline does
 
-Searches the 9-dim weight box (`BOUNDS` in `bo_tune.py`) for the values
+Searches the 12-dim weight box (`BOUNDS` in `bo_tune.py`) for the values
 of `heuristic.W_INIT` that maximise RattleBot's paired win-rate against
-a reference opponent (`FloorBot` by default).
+a reference opponent (`FloorBot` by default). Dims 9-11 (F14/F15/F16)
+are the three parallel distance-kernel features added in T-20c.1; they
+let BO allocate mass to whichever decay shape (recip / exp / step) best
+matches Carrie's actual heuristic without us needing to know it.
 
 Results are emitted in two files:
 
@@ -30,10 +35,49 @@ This keeps tuning and gating cleanly separated.
 
 ## 2. Search space
 
-See `BOT_STRATEGY_V02_ADDENDUM.md` §2.5 Table — bounds are sign-
-preserving (BO cannot flip a sign). The `w_init` row matches
-`heuristic.W_INIT` 1-for-1 and is seeded into BO via `x0=[W_INIT]`, so
-the first trial is immediately informative.
+12-dim box, sign-preserving bounds. See `BOUNDS` in `tools/bo_tune.py`
+for exact values.
+
+| Idx | Feature                  | Lower | Upper | w_init | Notes |
+|-----|--------------------------|-------|-------|--------|-------|
+| 0   | F1  score_diff           | +0.5  | +2.0  | +1.0   | ground-truth objective |
+| 1   | F3  primed_popcount      |  0.0  | +1.0  | +0.3   | board-global approx |
+| 2   | F4  carpet_popcount      |  0.0  | +0.8  | +0.2   | banked points |
+| 3   | F5  our_cell_potential   |  0.0  | +3.0  | +1.5   | Carrie-style lever |
+| 4   | F7  opp_cell_potential   | −3.0  |  0.0  | −1.2   | opp mirror |
+| 5   | F11 belief_max_mass      | −5.0  |  0.0  | −3.0   | drives SEARCH gate |
+| 6   | F12 belief_entropy       | −2.0  |  0.0  | −0.5   | concentration signal |
+| 7   | F8  opp_line_threat      | −3.0  |  0.0  | −0.6   | next-turn opp roll |
+| 8   | F13 belief_com_dist      | −0.20 |  0.0  | −0.05  | worker-to-COM |
+| 9   | F14 cell_pot_recip       |  0.0  | +0.5  | +0.15  | H1 decay 1/(1+d) |
+| 10  | F15 cell_pot_exp         |  0.0  | +0.5  | +0.10  | H2 decay exp(-0.5 d) |
+| 11  | F16 cell_pot_step        |  0.0  | +0.5  | +0.10  | H6 decay step at D=5 |
+
+The `w_init` row matches `heuristic.W_INIT` 1-for-1 and is seeded into
+BO via `x0=[W_INIT]`, so the first trial is immediately informative.
+BO is NOT allowed to flip a sign (bounds enforce it). F14/F15/F16 are
+explicitly non-negative: positive weight means "potential near our
+worker is good" — flipping would encode the opposite of what the
+geometry says.
+
+## 2.1 Why three distance kernels instead of one parametric feature
+
+Per CARRIE_DECONSTRUCTION §5 (fallback path: we have no Carrie replays
+per INTEL_PROBE), we can't know Carrie's exact decay form. Three
+options were considered:
+- **(a) Single parametric feature** with categorical kernel choice and
+  continuous λ/D_step. Clean but adds mixed search space which skopt
+  handles less well than pure Real boxes.
+- **(b) Three weighted features, BO zeros the losers.** Chosen — a pure
+  Real box is friendlier to scikit-optimize's GP surrogate and the
+  runtime cost (3× O(64) dot products + one shared O(64·4) P_vec
+  build) is trivial.
+- **(c) Single kernel, hope for the best.** Risk of picking the wrong
+  shape is non-recoverable.
+
+(b) subsumes (a)'s expressiveness when any single kernel dominates: BO
+can drive two weights to 0 and find the optimum along the remaining
+axis. If Carrie blends multiple decays, (b) also captures that.
 
 ## 3. Objective function
 

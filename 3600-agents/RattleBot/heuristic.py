@@ -1,9 +1,11 @@
-"""F2 linear leaf evaluator — v0.2 (9 features).
+"""F2 linear leaf evaluator — v0.2.1 (12 features, multi-scale kernel).
 
-9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c.
-v0.1 shipped 7 features; v0.2 adds F8 (opponent line threat) and F13
-(belief center-of-mass distance from worker) per AUDIT §3.8 + the
-pre-BO-tuning prep for T-20d.
+9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c
+expanded by 3 distance-kernel features (T-20c.1) per
+CARRIE_DECONSTRUCTION §5. v0.1 shipped 7 features; v0.2 added F8
+(opponent line threat) and F13 (belief COM distance); v0.2.1 adds the
+multi-scale-decay superset kernel F14/F15/F16 so BO can pick Carrie's
+actual decay shape without us knowing it.
 
 Features (all float64, sign-carried by W_INIT):
 
@@ -28,11 +30,25 @@ Features (all float64, sign-carried by W_INIT):
                                   geometric signal for "am I near where
                                   the rat probably is"; sharpens sensor
                                   and cheapens a future search
+  F14 cell_potential_recip      = Σ_c P(c) / (1 + d(worker, c))
+                                  Carrie-decay hypothesis H1 (1/(1+d))
+  F15 cell_potential_exp        = Σ_c P(c) · exp(-0.5·d(worker, c))
+                                  Carrie-decay hypothesis H2 (exp(-λd),
+                                  small-λ end) — λ frozen at 0.5 in
+                                  v0.2.1; BO tunes the linear weight.
+  F16 cell_potential_step       = Σ_{c: d≤5} P(c)
+                                  Carrie-decay hypothesis H6 (step at
+                                  D_max=5). No decay inside reach;
+                                  zero outside.
+
+  P(c) = best-roll-value-if-worker-stood-at-c (ray scan through
+         BLOCKED/CARPET/opp-worker blockers, Manhattan-extended using
+         CARPET_POINTS_TABLE lookup). Cached as `_P_VEC` per eval.
 
 Public API (module-level):
 
     evaluate(board, belief_summary, weights=None) -> float
-    features(board, belief_summary) -> np.ndarray   # shape (9,) float64
+    features(board, belief_summary) -> np.ndarray   # shape (12,) float64
 
 A thin Heuristic class is kept for downstream consumers (search engine).
 
@@ -63,7 +79,7 @@ __all__ = [
 ]
 
 
-N_FEATURES: int = 9
+N_FEATURES: int = 12
 
 # Terminal eval = (player_points - opp_points) * TERMINAL_SCALE.
 # Chosen >> any realistic non-terminal eval so minimax always prefers
@@ -104,9 +120,18 @@ GAMMA_RESET: float = 0.3
 #                      sensor draws are sharp and a potential SEARCH is
 #                      cheap. Small magnitude because Manhattan in [0,14]
 #                      would otherwise swamp F1. BO will retune in T-20d.
+#   9   F14   +0.15   Σ P(c)/(1+d): Carrie-decay H1 (reciprocal). Starter
+#                     magnitude small — the three kernels are redundant
+#                     at first; BO will reallocate mass to whichever
+#                     shape actually correlates with Carrie's play.
+#                     (CARRIE_DECONSTRUCTION §5 starter: 0.4; scaled down
+#                     here because our P(c) magnitudes already saturate
+#                     at carpet_value(7)=21.)
+#  10   F15   +0.10   Σ P(c)·exp(-0.5 d): Carrie-decay H2 (exponential).
+#  11   F16   +0.10   Σ_{d≤5} P(c): Carrie-decay H6 (step at D_max=5).
 #
 W_INIT: np.ndarray = np.array(
-    [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05],
+    [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05, 0.15, 0.10, 0.10],
     dtype=np.float64,
 )
 assert W_INIT.shape == (N_FEATURES,)
@@ -124,6 +149,37 @@ _FULL_MASK: int = (1 << _BOARD_CELLS) - 1
 # `com = float(np.dot(belief, _COM_X_COORDS))` is one BLAS call.
 _COM_X_COORDS = np.tile(np.arange(BOARD_SIZE, dtype=np.float64), BOARD_SIZE)
 _COM_Y_COORDS = np.repeat(np.arange(BOARD_SIZE, dtype=np.float64), BOARD_SIZE)
+
+# --------------------------------------------------------------------------
+# Multi-scale distance-kernel statics (F14 / F15 / F16 — T-20c.1)
+#
+# Per CARRIE_DECONSTRUCTION §5, we don't know whether Carrie's decay is
+# reciprocal (1/(1+d)), exponential (exp(-λd)), or step (1 if d<=D). We
+# include all three with BO-tuned weights so the union dominates whichever
+# one she actually uses. Each kernel maps Manhattan distance d in [0..14]
+# to a scalar weight.
+# --------------------------------------------------------------------------
+
+# 64x64 Manhattan-distance matrix over flat indices i=y*8+x.
+# `_MANHATTAN[i, j]` is Manhattan dist between cell i and cell j.
+_MANHATTAN = (
+    np.abs(_COM_X_COORDS[:, None] - _COM_X_COORDS[None, :])
+    + np.abs(_COM_Y_COORDS[:, None] - _COM_Y_COORDS[None, :])
+).astype(np.float64)
+
+# Per-kernel 64x64 matrices: `_KERNEL_RECIP[i, j]` is the recip-decay
+# applied to cell j when the worker is at cell i. Pre-broadcast so the
+# per-eval path is a single `np.dot(P_vec, kernel_row)`.
+_KERNEL_RECIP = 1.0 / (1.0 + _MANHATTAN)
+# Exp kernel with λ=0.5 — matches CARRIE_DECONSTRUCTION §5.1 starter.
+# λ frozen in v0.2.1 — BO tunes the *weight* not the shape; making λ
+# a BO dim would promote this to a mixed search space which skopt
+# handles worse than pure Real boxes (note from team-lead T-20c.1 brief).
+_LAMBDA_EXP = 0.5
+_KERNEL_EXP = np.exp(-_LAMBDA_EXP * _MANHATTAN)
+# Step kernel with D_max = 5 — matches §5.1 starter (H6-mid).
+_D_STEP = 5
+_KERNEL_STEP = (_MANHATTAN <= _D_STEP).astype(np.float64)
 
 
 def _popcount(m: int) -> int:
@@ -230,6 +286,66 @@ def _cell_potential_for_worker(
     return best + _LAMBDA * second
 
 
+def _cell_potential_vector(
+    board: board_mod.Board,
+) -> np.ndarray:
+    """Build P(c) over all 64 cells for the multi-scale distance kernels
+    (F14/F15/F16). Returns shape (64,) float64.
+
+    For each cell c = (x, y):
+      P(c) = max over 4 directions of carpet-roll-value of the longest
+             reach through non-blocker cells from c.
+      Blockers = BLOCKED | CARPET | opp-worker-bit.
+      Cells where c itself is a blocker (BLOCKED/CARPET/opp-worker)
+      receive P=0 (we can't stand there, so cell has no potential).
+
+    Runtime: ~64 cells × 4 rays = 256 ray scans per call. Each ray is
+    O(7). Total ~ 1.8 kops per evaluate().
+    """
+    blocked = board._blocked_mask
+    carpet = board._carpet_mask
+    ox, oy = board.opponent_worker.position
+    opp_bit = 1 << (oy * BOARD_SIZE + ox)
+    own_bit = 1 << (
+        board.player_worker.position[1] * BOARD_SIZE
+        + board.player_worker.position[0]
+    )
+    # P(c) is "if I were standing at c, what's my best roll?" — so
+    # treat the opp worker as a blocker but NOT our own worker (since
+    # hypothetically we've moved to c). Our actual position isn't a
+    # blocker either because it might coincide with c.
+    blockers_base = blocked | carpet | opp_bit
+
+    # "dead" cells = cells where c itself is unwalkable (BLOCKED, CARPET
+    # for this purpose — CARPET is walkable but you can't roll from
+    # there; SPACE/PRIMED are fine; we'll ignore PRIMED-at-c as fine
+    # since reach() walks away from c).
+    dead_mask = (blocked | carpet) & ~own_bit
+
+    out = np.zeros(_BOARD_CELLS, dtype=np.float64)
+    for idx in range(_BOARD_CELLS):
+        bit = 1 << idx
+        if dead_mask & bit:
+            continue  # P=0 on BLOCKED/CARPET cells
+        if idx == (oy * BOARD_SIZE + ox):
+            continue  # opp stands here — we can't be here hypothetically
+        x = idx % BOARD_SIZE
+        y = idx // BOARD_SIZE
+        # If c itself is PRIMED or BLOCKED mask already caught it;
+        # strip the `c` bit from the blockers set so c doesn't block
+        # its own rays (we're "standing" on c for this reach calc).
+        blockers_c = blockers_base & ~bit
+        best = 0.0
+        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            k = _ray_reach(blockers_c, x, y, dx, dy)
+            if k >= 2:
+                v = _CARPET_VALUE[k]
+                if v > best:
+                    best = v
+        out[idx] = best
+    return out
+
+
 def _reach_through_primed(
     primed_mask: int, blocked_mask: int, carpet_mask: int,
     workers_mask: int, x: int, y: int, dx: int, dy: int,
@@ -315,7 +431,7 @@ def _belief_com_distance(
 def features(
     board: board_mod.Board, belief_summary: BeliefSummary
 ) -> np.ndarray:
-    """Compute the 9-feature vector (float64) from the perspective of
+    """Compute the 12-feature vector (float64) from the perspective of
     `board.player_worker`. Fast path for leaf eval.
 
     No allocation beyond the returned array; all sub-calculations reuse
@@ -351,6 +467,15 @@ def features(
     # F13 — belief COM distance from our worker. O(1) if com_x/com_y are
     # precomputed in BeliefSummary, else O(64) fallback.
     out[8] = _belief_com_distance((wx, wy), belief_summary)
+
+    # F14 / F15 / F16 — multi-scale distance-kernel superset per
+    # CARRIE_DECONSTRUCTION §5. Build P(c) once (~256 ray scans), then
+    # three BLAS dots with the precomputed decay rows.
+    p_vec = _cell_potential_vector(board)
+    worker_idx = wy * BOARD_SIZE + wx
+    out[9] = float(np.dot(p_vec, _KERNEL_RECIP[worker_idx]))
+    out[10] = float(np.dot(p_vec, _KERNEL_EXP[worker_idx]))
+    out[11] = float(np.dot(p_vec, _KERNEL_STEP[worker_idx]))
 
     return out
 

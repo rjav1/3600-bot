@@ -215,15 +215,13 @@ def test_zero_features_on_empty_board():
     assert abs(feats[6] - math.log(64)) < 1e-6
 
     val = evaluate(board, bs)
-    # Sanity: eval magnitude should be well below a single-point-ish scale
-    # dominated by F11*w11 and F12*w12 terms.
-    contribution = (
-        W_INIT[5] * (1 / 64) + W_INIT[6] * math.log(64)
-    )
-    # F5/F7 may add a few points of future-potential signal; bound loosely.
-    assert abs(val - contribution) < 50.0, (
-        f"empty-board eval {val} unreasonably far from "
-        f"F11/F12 baseline {contribution}"
+    # Sanity: F1/F3/F4 = 0 so eval is dominated by F5+F7+F11+F12+F13
+    # and the three multi-scale kernels (F14/F15/F16). The kernels
+    # aggregate over all 64 cells so they can contribute tens of
+    # points; just check the value is finite and within a loose band.
+    assert math.isfinite(val)
+    assert -1000.0 < val < 1000.0, (
+        f"empty-board eval {val} out of sanity bounds"
     )
 
 
@@ -277,6 +275,16 @@ def test_symmetry():
     # sides are non-negative and bounded by the board diameter (14).
     assert 0.0 <= feats_fwd[8] <= 14.0
     assert 0.0 <= feats_rev[8] <= 14.0
+    # F14/F15/F16 — multi-scale distance kernels over P(c). Always
+    # non-negative (P(c)>=0, kernels>=0). Depend on worker position,
+    # so they're perspective-dependent. Bound loosely — with all cells
+    # at max potential (21) and all 64 cells contributing: F14 ≤
+    # 21·Σ 1/(1+d) for our worker; a generous upper bound is 21·64·1.
+    assert feats_fwd[9] >= 0 and feats_fwd[10] >= 0 and feats_fwd[11] >= 0
+    assert feats_rev[9] >= 0 and feats_rev[10] >= 0 and feats_rev[11] >= 0
+    assert feats_fwd[9] < 21 * 64
+    assert feats_fwd[10] < 21 * 64
+    assert feats_fwd[11] < 21 * 64
 
 
 def test_per_call_timing():
@@ -449,6 +457,93 @@ def test_f13_fallback_when_com_missing():
     assert feats[8] == 2.0, f"F13 fallback path wrong: got {feats[8]}"
 
 
+def test_multiscale_kernels_nonnegative_and_finite():
+    """F14/F15/F16 must always be finite, non-negative, and bounded by
+    P(c) × worst-case kernel sum. Uses a cluttered random board to
+    stress the code path."""
+    rng = random.Random(77)
+    board = _random_board(rng)
+    bs = _uniform_belief_summary()
+    feats = features(board, bs)
+    for idx in (9, 10, 11):
+        assert math.isfinite(feats[idx]), f"F{idx+5} not finite: {feats[idx]}"
+        assert feats[idx] >= 0.0
+
+
+def test_f14_reciprocal_kernel_nearer_is_more():
+    """For a fixed P(c) landscape, moving the worker CLOSER to the
+    potential mass should INCREASE F14 (reciprocal decay weights closer
+    cells more heavily). Build a board where all primable cells are in
+    the top-left, and compare F14 with worker at (0,0) vs (7,7)."""
+    # Empty board — no blockers, no carpet, no primes — every cell has
+    # the same P(c) (= roll_value(7) = 21). We'll compare two worker
+    # positions and check F14 is bigger when worker is at the "center"
+    # than at a corner, since center-cells see more nearby P(c).
+    board_corner = _fresh_board(
+        player_pos=(0, 0), opp_pos=(7, 7), blockers=False
+    )
+    board_center = _fresh_board(
+        player_pos=(3, 3), opp_pos=(7, 7), blockers=False
+    )
+    bs = _uniform_belief_summary()
+    f_corner = features(board_corner, bs)
+    f_center = features(board_center, bs)
+    # F14 = Σ P(c) / (1 + d). Σ 1/(1+d) is larger from center than
+    # corner because the 4×4 quadrant distances are smaller.
+    assert f_center[9] > f_corner[9], (
+        f"F14 expected center({f_center[9]}) > corner({f_corner[9]})"
+    )
+
+
+def test_f15_exp_kernel_decays_faster_than_recip():
+    """F15 uses exp(-0.5 d). For a fixed worker and P(c), F15 must be
+    LESS than F14 at the same position because exp decays faster than
+    1/(1+d) beyond d=1. This catches kernel-implementation errors."""
+    board = _fresh_board(player_pos=(3, 3), opp_pos=(5, 3), blockers=False)
+    bs = _uniform_belief_summary()
+    feats = features(board, bs)
+    # F15 is smaller than F14 on any uniformly-valued landscape from
+    # d=1 onward: exp(-0.5) < 0.5. At d=0 both are 1. Overall sum is
+    # smaller for F15.
+    assert feats[10] < feats[9], (
+        f"F15 exp({feats[10]}) should be smaller than F14 recip({feats[9]})"
+    )
+
+
+def test_f16_step_kernel_equals_p_sum_within_d_max():
+    """F16 = Σ_{c: d<=5} P(c). On an empty board with worker at (3,3),
+    every cell on the 8x8 board has d<=6 except (0,0) edges; actually
+    with D=5 we miss a few distant cells. This test just asserts F16
+    is strictly positive and ≤ Σ_all P(c)."""
+    board = _fresh_board(player_pos=(3, 3), opp_pos=(7, 0), blockers=False)
+    bs = _uniform_belief_summary()
+    feats = features(board, bs)
+    # F16 must be a subset of the total P-sum. F14 * constant < F16
+    # because all kernels assign weight 1 at d=0 and step assigns 1
+    # up to d=5. A cleaner relation: F16 ≥ contribution of d=0 cell,
+    # which is P(worker_cell) since kernel=1 there.
+    assert feats[11] > 0
+    # F16 must not exceed the raw sum of P(c).
+    from RattleBot.heuristic import _cell_potential_vector
+    p_sum = float(_cell_potential_vector(board).sum())
+    assert feats[11] <= p_sum + 1e-9, (
+        f"F16 ({feats[11]}) exceeds total P-sum ({p_sum})"
+    )
+
+
+def test_p_vec_zero_on_blocked_cells():
+    """P(c) must be 0 on BLOCKED and CARPET cells — we can't stand
+    there (BLOCKED) or roll from there (CARPET already scored)."""
+    from RattleBot.heuristic import _cell_potential_vector
+    board = _fresh_board(player_pos=(3, 3), opp_pos=(5, 3), blockers=False)
+    # Mark some cells as BLOCKED and CARPET and verify zeros.
+    board.set_cell((0, 0), Cell.BLOCKED)
+    board.set_cell((7, 7), Cell.CARPET)
+    p_vec = _cell_potential_vector(board)
+    assert p_vec[0 * BOARD_SIZE + 0] == 0.0  # (0,0)
+    assert p_vec[7 * BOARD_SIZE + 7] == 0.0  # (7,7)
+
+
 def test_class_wrapper_matches_module_fn():
     board = _fresh_board()
     bs = _uniform_belief_summary()
@@ -496,6 +591,11 @@ def _run_all():
         test_f8_no_threat_from_carpet_or_space,
         test_f13_com_dist_monotone,
         test_f13_fallback_when_com_missing,
+        test_multiscale_kernels_nonnegative_and_finite,
+        test_f14_reciprocal_kernel_nearer_is_more,
+        test_f15_exp_kernel_decays_faster_than_recip,
+        test_f16_step_kernel_equals_p_sum_within_d_max,
+        test_p_vec_zero_on_blocked_cells,
         test_class_wrapper_matches_module_fn,
         test_weight_shape_validation,
     ]

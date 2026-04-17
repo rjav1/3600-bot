@@ -84,10 +84,22 @@ BOUNDS: List[Tuple[float, float]] = [
     (-2.0, +0.0),   # F12 belief_entropy
     (-3.0, +0.0),   # F8  opp_line_threat
     (-0.20, +0.0),  # F13 belief_com_dist
+    # T-20c.1 multi-scale distance-kernel superset
+    # (CARRIE_DECONSTRUCTION §5). All three aggregate Σ P(c)·decay(d)
+    # with P(c) ≥ 0, decay ≥ 0, so the features themselves are ≥ 0.
+    # Positive weight = "potential near our worker is good" (correct);
+    # BO not allowed to flip sign. Upper bounds scaled by typical
+    # feature magnitudes (F14≈150-200, F15≈100-150, F16≈500-800).
+    (+0.0, +0.5),   # F14 cell_potential_recip (H1 1/(1+d))
+    (+0.0, +0.5),   # F15 cell_potential_exp   (H2 exp(-0.5 d))
+    (+0.0, +0.5),   # F16 cell_potential_step  (H6 1 iff d<=5)
 ]
 
 # Hard-tuned default (matches RattleBot.heuristic.W_INIT).
-W_INIT: List[float] = [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05]
+W_INIT: List[float] = [
+    1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05,
+    0.15, 0.10, 0.10,
+]
 
 # Light L2 regulariser pulling toward `w_init`. See §2.5 "Objective".
 REG_LAMBDA: float = 0.01
