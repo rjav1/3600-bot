@@ -1174,7 +1174,9 @@ def _primed_endpoint_adjacency(board: board_mod.Board) -> int:
     for the exploit hypothesis (adjacent-to-steal), cleanly separable
     in BO space. The mobility-denied base was never a shipped v0.x
     feature; keeping F10 adjacency-only gives BO a single-signal to
-    weight, avoiding the combined-signal disentangling cost.
+    weight, avoiding the combined-signal disentangling cost. See
+    `docs/plan/BOT_STRATEGY_V04_ADDENDUM.md` §3 "F10" for the canonical
+    rationale. Locked in for v0.4 — any reformulation is v0.5 work.
     """
     primed = board._primed_mask
     if primed == 0:

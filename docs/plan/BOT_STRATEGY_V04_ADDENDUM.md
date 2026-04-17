@@ -160,6 +160,50 @@ per BO doctrine. (Architect's draft suggested `−0.40` + `[−2.0, 0.0]`;
 shipped magnitudes scaled for the integer-count feature vs architect's
 points-value proposal.)
 
+### F22 — `prime_steal_bonus` — SHIPPED v0.4 (T-40-EXPLOIT-1, commit f63d28b)
+
+**Shipped definition:** bonus when OUR carpet-placement move turns an
+opponent-primed cell into OUR carpet. Mechanically the engine resolves
+this as a take-over; F22 rewards the eval for foreseeing it in search.
+17th feature slot in the pre-EXPLOIT-2 N=17 vector; slot index 16 in
+final N=19 vector.
+
+**`w_init`:** `+0.3` (positive). BO bound: `[0.0, +1.0]`, sign-locked.
+
+### F10 — `primed_endpoint_adjacency` — SHIPPED v0.4 (T-40-EXPLOIT-2, **option (b) adjacency-only**)
+
+**Shipped definition (canonical):** count of primed-line endpoints with
+run length `k ≥ 2` that are cardinal-adjacent (Manhattan == 1) to OUR
+worker. Line-start dedup'd so each maximal primed run is inspected once;
+both endpoints counted if the worker is adjacent to both. `k = 1` lines
+skipped. Slot 17 in N=19 vector.
+
+**Why (b) over (a) — design rationale locked in per team-lead on
+2026-04-17:** the earlier (a) proposal combined a "mobility-denied base"
+term with the adjacency bonus. Option (a)'s base was heuristically
+duplicative with F15 mobility + F17 lockout: the same "opponent can't
+easily clear this run" signal was already being paid out by those
+features, so adding it again in F10 would have double-counted. Option
+(b) isolates the novel adjacency signal — "WE are positioned to extend
+or block the endpoint" — which nothing else in the feature set
+captures. BO gets a cleaner axis to tune, and future feature-prune
+passes can reason about F10 independently of F15/F17.
+
+**Locked in:** no more F10 reformulations in v0.4. Any future work on
+F10 (e.g. restoring the base term, or weighting by `k`, or threat-tier
+scaling) is a v0.5 decision.
+
+**`w_init`:** `+0.15` (positive). BO bound: `[0.0, +0.5]`, sign-locked.
+
+### F24 — `opp_wasted_primes` — SHIPPED v0.4 (T-40-EXPLOIT-3, mirror of F17)
+
+**Shipped definition:** F17 semantic applied to OPPONENT side — primed
+cells the opponent is now positionally unable to extend or cash. Slot
+18 in N=19 vector.
+
+**`w_init`:** `+0.15` (positive: opp-wasted-primes is good for US). BO
+bound: `[0.0, +1.0]`, sign-locked.
+
 ### F21 — `belief_concentration_rate` — DEFER (conditional include)
 
 **Definition:** `Δ entropy / Δ turn` over the last 3 turns. Positive = collapsing toward a cell → SEARCH about to flip +EV. Negative = diffusing.
