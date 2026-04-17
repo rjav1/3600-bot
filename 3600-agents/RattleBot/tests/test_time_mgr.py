@@ -25,7 +25,13 @@ for p in (
 
 from game.board import Board
 
-from RattleBot.time_mgr import TimeManager, DEFAULT_PER_TURN_CEILING_S
+from RattleBot.time_mgr import (
+    TimeManager,
+    DEFAULT_PER_TURN_CEILING_S,
+    ENDGAME_HARD_CAP_MULT,
+    ENDGAME_TURNS_THRESHOLD,
+    HARD_CAP_MULT,
+)
 
 
 def _board() -> Board:
@@ -174,6 +180,67 @@ def test_classify_buckets():
     )
     b.player_worker.turns_left = 20
     assert tm.classify(b, mid) == "normal"
+
+
+# --- T-30d: endgame multiplier cap lift ---------------------------------
+
+
+def test_endgame_multiplier_extended_at_low_turns_left():
+    """With turns_left <= ENDGAME_TURNS_THRESHOLD, the surplus hard-cap
+    should be ENDGAME_HARD_CAP_MULT (3.5x), not the default 2.5x.
+
+    Set `turns_left=3` and a high `time_left`. Construct a TimeManager
+    with a large per_turn_ceiling_s so the cap dominates, not the
+    ceiling. Force `critical` multiplier (1.6x) via turns_left <= 4;
+    1.6x < 3.5x so the cap binding is what we want to observe. With
+    `time_left=60`, `usable=59.5`, `base=usable/3=19.833`, and the
+    3.5x cap gives 69.42 while 2.5x would give 49.58. Asserting
+    budget > 2.5x base demonstrates the endgame lift fired.
+    """
+    assert ENDGAME_TURNS_THRESHOLD >= 3
+    assert ENDGAME_HARD_CAP_MULT > HARD_CAP_MULT
+
+    b = _board()
+    b.player_worker.turns_left = 3
+    tm = TimeManager(per_turn_ceiling_s=1e6)  # disable ceiling clamp
+    budget = tm.start_turn(b, lambda: 60.0)
+
+    usable = 60.0 - tm.safety_s
+    base = usable / 3
+    old_cap = base * HARD_CAP_MULT       # 49.58 s
+    new_cap = base * ENDGAME_HARD_CAP_MULT  # 69.42 s
+
+    assert budget > old_cap + 1e-6, (
+        f"budget {budget:.3f}s did not clear 2.5x base={old_cap:.3f}s"
+    )
+    # Exact new cap when critical-multiplier * base >= new_cap.
+    assert budget == new_cap, (
+        f"expected endgame cap {new_cap:.3f}s, got {budget:.3f}s"
+    )
+
+
+def test_non_endgame_uses_default_cap():
+    """turns_left > ENDGAME_TURNS_THRESHOLD keeps the 2.5x cap."""
+    b = _board()
+    b.player_worker.turns_left = ENDGAME_TURNS_THRESHOLD + 5  # midgame
+    tm = TimeManager(per_turn_ceiling_s=1e6)
+    budget = tm.start_turn(b, lambda: 100.0)
+    usable = 100.0 - tm.safety_s
+    base = usable / (ENDGAME_TURNS_THRESHOLD + 5)
+    default_cap = base * HARD_CAP_MULT
+    # Critical mult doesn't apply at turns_left=10, so label is normal
+    # (1.0x) -> budget == base. Either way, budget must not exceed 2.5x.
+    assert budget <= default_cap + 1e-6
+
+
+def test_endgame_safety_s_still_reserved():
+    """T-30d must not eat into the 0.5s safety reserve."""
+    b = _board()
+    b.player_worker.turns_left = 2
+    tm = TimeManager(per_turn_ceiling_s=1e6)
+    # time_left=0.4s < safety_s: usable==0, budget collapses to min.
+    budget = tm.start_turn(b, lambda: 0.4)
+    assert budget <= 0.1, f"safety_s violated: budget={budget}"
 
 
 if __name__ == "__main__":

@@ -32,6 +32,12 @@ __all__ = ["TimeManager", "DEFAULT_PER_TURN_CEILING_S"]
 
 SAFETY_S: float = 0.5
 HARD_CAP_MULT: float = 2.5
+# T-30d (V03 ADDENDUM §3, §12): endgame turns are higher-stakes and the
+# board is typically full enough that branching is reduced — reward
+# deeper search by lifting the surplus cap from 2.5× to 3.5× when
+# `turns_left <= ENDGAME_TURNS_THRESHOLD`. Expected +10–20 ELO.
+ENDGAME_HARD_CAP_MULT: float = 3.5
+ENDGAME_TURNS_THRESHOLD: int = 5
 _MULTIPLIER = {"easy": 0.6, "normal": 1.0, "critical": 1.6}
 _MIN_BUDGET_S = 0.05
 # v0.2 default per T-20a / AUDIT_V01 M-01: 6.0 s matches the tournament
@@ -88,8 +94,19 @@ class TimeManager:
 
         label = self.classify(board, belief_summary)
         mult = _MULTIPLIER.get(label, 1.0)
+        # T-30d: endgame multiplier cap lift. When turns_left is at or
+        # below ENDGAME_TURNS_THRESHOLD, lift both (a) the effective
+        # multiplier up to ENDGAME_HARD_CAP_MULT and (b) the surplus
+        # cap to the same value — endgame turns are higher-stakes and
+        # lower-branching, so more time → deeper search → higher-EV.
+        # Safety reserve above (`usable = time_left - safety_s`) still
+        # applies; we only extend the upward cap, not the floor.
+        in_endgame = turns_left <= ENDGAME_TURNS_THRESHOLD
+        cap_mult = ENDGAME_HARD_CAP_MULT if in_endgame else HARD_CAP_MULT
+        if in_endgame and mult < cap_mult:
+            mult = cap_mult
         budget = base * mult
-        hard_cap = base * HARD_CAP_MULT
+        hard_cap = base * cap_mult
         if budget > hard_cap:
             budget = hard_cap
         if budget > self.per_turn_ceiling_s:
