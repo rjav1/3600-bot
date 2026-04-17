@@ -813,12 +813,12 @@ def test_numba_kernels_match_python_reference():
         )
 
 
-def test_numba_kill_switch_forces_python_path():
-    """When env var `RATTLEBOT_NUMBA=0`, `is_numba_active()` must be False
-    and the dispatcher must run the pure-Python reference.
+def _spawn_child_and_check_numba(env_value):
+    """Helper: spawn a child Python with (or without) RATTLEBOT_NUMBA set,
+    import `RattleBot.heuristic`, print `is_numba_active()` + `_USE_NUMBA`
+    + `_NUMBA_AVAILABLE`. Returns the captured stdout lines.
 
-    The kill switch is resolved at module-import time, so we subprocess
-    into a child Python with the env var set.
+    `env_value` may be None (unset — exercises the default) or a string.
     """
     import subprocess
     import textwrap
@@ -834,7 +834,9 @@ def test_numba_kill_switch_forces_python_path():
         """
     )
     env = os.environ.copy()
-    env["RATTLEBOT_NUMBA"] = "0"
+    env.pop("RATTLEBOT_NUMBA", None)
+    if env_value is not None:
+        env["RATTLEBOT_NUMBA"] = env_value
     cp = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True, text=True, env=env,
@@ -843,9 +845,57 @@ def test_numba_kill_switch_forces_python_path():
     assert cp.returncode == 0, (
         f"child failed rc={cp.returncode}\nstdout={cp.stdout}\nstderr={cp.stderr}"
     )
-    lines = cp.stdout.splitlines()
+    return cp.stdout.splitlines()
+
+
+def test_numba_kill_switch_forces_python_path():
+    """When env var `RATTLEBOT_NUMBA=0`, `is_numba_active()` must be False
+    and the dispatcher must run the pure-Python reference.
+
+    The kill switch is resolved at module-import time, so we subprocess
+    into a child Python with the env var set.
+    """
+    lines = _spawn_child_and_check_numba("0")
     assert "active False" in lines, f"expected inactive, got: {lines}"
     assert "use False" in lines, f"use flag unexpected: {lines}"
+
+
+def test_numba_default_is_off_submission_safe():
+    """T-30f: with NO env var set, the default must be pure-Python
+    (submission-safe per LIVE_UPLOAD_006 — numba zips fail the
+    bytefight.org sandbox validator; pure-Python zips pass).
+
+    Regression guard: any future change that flips the default back
+    to ON must also update this test + commit an explicit rationale.
+    """
+    lines = _spawn_child_and_check_numba(None)
+    assert "active False" in lines, (
+        f"T-30f invariant: default must be OFF (pure Python), got: {lines}"
+    )
+    assert "use False" in lines, (
+        f"T-30f invariant: _USE_NUMBA default must be False, got: {lines}"
+    )
+
+
+def test_numba_opt_in_activates_jit():
+    """T-30f: with `RATTLEBOT_NUMBA=1`, numba must be active.
+
+    Guards the opt-in path so local benchmarks + BO tuning still
+    have a way to enable the numba leaf speedup.
+    """
+    lines = _spawn_child_and_check_numba("1")
+    # `active` depends on numba being importable in the child Python.
+    # We already rely on numba being installed elsewhere (T-30c-numba),
+    # so this should always be True in a healthy dev env.
+    assert "avail True" in lines, (
+        f"numba not importable in child env: {lines}"
+    )
+    assert "use True" in lines, (
+        f"_USE_NUMBA opt-in didn't stick: {lines}"
+    )
+    assert "active True" in lines, (
+        f"is_numba_active() should be True with RATTLEBOT_NUMBA=1: {lines}"
+    )
 
 
 def test_numba_warmup_is_fast_second_time():
@@ -908,6 +958,8 @@ def _run_all():
         test_weight_shape_validation,
         test_numba_kernels_match_python_reference,
         test_numba_kill_switch_forces_python_path,
+        test_numba_default_is_off_submission_safe,
+        test_numba_opt_in_activates_jit,
         test_numba_warmup_is_fast_second_time,
         test_evaluate_returns_same_value_both_backends,
     ]

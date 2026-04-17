@@ -117,18 +117,29 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# Numba kill-switch (T-30c-numba)
+# Numba kill-switch (T-30c-numba; default flipped OFF in T-30f)
 #
 # `_USE_NUMBA = True`  → compile the 3 hot functions with @njit(cache=True)
 #                         and dispatch through the numba kernel. Falls back
 #                         to pure-Python if numba is unavailable/broken.
 # `_USE_NUMBA = False` → pure-Python path (byte-identical to v0.2.2).
 #
-# Can also be overridden at runtime via env var RATTLEBOT_NUMBA=0 (off) or
-# =1 (on) — used by tests that must assert parity with `_USE_NUMBA=False`.
+# **Default is now OFF** (T-30f, 2026-04-17) so every zip built from this
+# tree is tournament-safe by default — LIVE_UPLOAD_006 confirmed the
+# bytefight.org validator rejects the numba zip. Opt in explicitly via
+# env var `RATTLEBOT_NUMBA=1` for local benchmarks + BO tuning where the
+# 3-4× leaf speedup matters. `RATTLEBOT_NUMBA=0` (or unset) keeps the
+# safe pure-Python path.
 # ---------------------------------------------------------------------------
 
-_USE_NUMBA: bool = os.environ.get("RATTLEBOT_NUMBA", "1") != "0"
+# T-30f (2026-04-17): flipped default from ON to OFF after
+# LIVE_UPLOAD_006 confirmed numba JIT breaks the bytefight.org sandbox
+# validator (pure-Python zip PASSES validation, numba zip FAILS —
+# byte-identical except for this one line). Default-OFF means every
+# submission zip built from this tree is tournament-safe by default;
+# opt in explicitly with `RATTLEBOT_NUMBA=1` for local benchmarks + BO
+# tuning where the 3-4× leaf speedup matters.
+_USE_NUMBA: bool = os.environ.get("RATTLEBOT_NUMBA", "0") == "1"
 
 try:
     if _USE_NUMBA:
