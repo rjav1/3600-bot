@@ -36,3 +36,10 @@ mlruns/
 *.bak
 tmp/
 scratch/
+
+# Bytefight client — sensitive (contains auth tokens / signed URLs)
+tools/scratch/*.har
+tools/bytefight_session.json
+tools/bytefight_poll_state.json
+bytefight_poll_pid.txt
+.env
