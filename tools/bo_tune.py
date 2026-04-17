@@ -1,3 +1,7 @@
+# PING-FIRST: if a BO run is active (bo_pid.txt present in
+# 3600-agents/matches/bo_v03_run*/), DO NOT Write/Edit THIS file or
+# heuristic.py/agent.py/etc. Worker subprocesses re-import per trial;
+# mid-run edits contaminate score averages. Kill BO first, edit, relaunch.
 """Bayesian-optimisation weight tuning pipeline for RattleBot (T-20d).
 
 Per `docs/plan/BOT_STRATEGY_V02_ADDENDUM.md` §2.5 + D-009. Searches the

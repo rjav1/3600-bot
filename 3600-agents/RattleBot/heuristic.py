@@ -1,3 +1,8 @@
+# PING-FIRST: if a BO run is active (see bo_pid.txt under any
+# 3600-agents/matches/bo_v03_run*/), DO NOT Write/Edit this file.
+# Worker subprocesses re-import from disk each trial; mid-run edits
+# contaminate BO score averages. Kill BO first
+# (taskkill //PID $(cat bo_pid.txt) //T //F), then edit, then relaunch.
 """F2 linear leaf evaluator — v0.4.2 (19 features, + F10/F24 exploits).
 
 9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c
