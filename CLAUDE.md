@@ -197,7 +197,7 @@ Beating Albert/Carrie essentially requires **expectiminimax with alpha-beta + an
 1. Zip the agent folder so the zip contains a directory with `agent.py` inside (e.g. `MyBot.zip` containing `MyBot/agent.py`).
 2. Zip must be ≤ 200 MB.
 3. Tournament machine: x86_64 Linux, Python 3.12, libs in `requirements.txt`. **No network**, no FS writes outside cwd, no reading outside cwd.
-4. Upload at https://bytefight.org. Use the email we have on Banner/Canvas (rahiljav@gmail.com is noted in context) so the grade attaches to the account.
+4. Upload at https://bytefight.org. Account email is **rjavid3@gatech.edu** (display name "Rjav"). Team URL: https://bytefight.org/compete/cs3600_sp2026/team. (Earlier drafts of this doc said rahiljav@gmail.com based on the session `userEmail` context — that's the user's general email, not the tournament account. Use rjavid3@gatech.edu.)
 5. Only one submission per team is active at a time — pick carefully before 11:59pm April 19, 2026.
 
 ---
