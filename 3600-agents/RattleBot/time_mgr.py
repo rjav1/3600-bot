@@ -38,6 +38,12 @@ HARD_CAP_MULT: float = 2.5
 # `turns_left <= ENDGAME_TURNS_THRESHOLD`. Expected +10–20 ELO.
 ENDGAME_HARD_CAP_MULT: float = 3.5
 ENDGAME_TURNS_THRESHOLD: int = 5
+# T-30e M-7 fix (V03_REDTEAM): under the default 6 s ceiling, the 3.5×
+# endgame lift was silently clamped — at base≈5-10 s, 3.5× = 17-35 s
+# all pinned to 6 s. Give the endgame a dedicated ceiling that still
+# respects `time_left - safety_s` and doesn't remove the ceiling
+# entirely. 20 s is the V03_REDTEAM recommendation.
+ENDGAME_HARD_CEILING_S: float = 20.0
 _MULTIPLIER = {"easy": 0.6, "normal": 1.0, "critical": 1.6}
 _MIN_BUDGET_S = 0.05
 # v0.2 default per T-20a / AUDIT_V01 M-01: 6.0 s matches the tournament
@@ -109,8 +115,24 @@ class TimeManager:
         hard_cap = base * cap_mult
         if budget > hard_cap:
             budget = hard_cap
-        if budget > self.per_turn_ceiling_s:
-            budget = self.per_turn_ceiling_s
+        # T-30e M-7: endgame uses a dedicated (higher) ceiling so the
+        # T-30d lift actually delivers. Non-endgame still clamps at
+        # `per_turn_ceiling_s` (default 6 s). In endgame we take the
+        # max of (user-supplied ceiling, dedicated endgame ceiling) so
+        # callers who explicitly raise `per_turn_ceiling_s` are not
+        # silently clamped DOWN by the endgame constant.
+        if in_endgame:
+            effective_ceiling = max(
+                self.per_turn_ceiling_s, ENDGAME_HARD_CEILING_S
+            )
+        else:
+            effective_ceiling = self.per_turn_ceiling_s
+        if budget > effective_ceiling:
+            budget = effective_ceiling
+        # Safety invariant: never allocate more than `usable` so the
+        # 0.5 s reserve stays intact regardless of the upper caps.
+        if budget > usable:
+            budget = usable
         if budget < _MIN_BUDGET_S:
             budget = min(_MIN_BUDGET_S, max(0.0, usable))
 

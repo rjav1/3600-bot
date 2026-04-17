@@ -226,13 +226,23 @@ class PlayerAgent:
     def _update_consec_search_misses(
         self, board: board_mod.Board
     ) -> None:
-        """Reconcile `_consec_search_misses` with engine state.
+        """Reconcile `_consec_search_misses` AND belief with engine state.
 
         `board.player_search = (loc, result)` reflects our last ply.
         Rules:
           - If our last move was a SEARCH (we set the flag at end of
-            play()) AND `result is False`: increment counter.
-          - Else (hit, or we didn't search last turn): reset to 0.
+            play()):
+            - hit  → reset counter to 0 AND reset belief to p_0
+                     (T-30e H-1 fix: the engine respawned the rat, our
+                     internal belief must follow suit).
+            - miss → increment counter AND zero the searched cell in
+                     belief (T-30e H-1 fix: without this, the next
+                     turn's SEARCH-gate sees the same hot cell).
+          - Else (we didn't search last turn): reset counter to 0.
+        Belief updates use `apply_our_search(loc, hit)`; they run
+        BEFORE `belief.update()`'s 4-step pipeline so the two T-step
+        predicts fire on top of the post-search state (rat respawn +
+        opp ply rat-move + our ply rat-move → p_0 @ T @ T).
         """
         if not self._last_own_move_was_search:
             self._consec_search_misses = 0
@@ -246,6 +256,13 @@ class PlayerAgent:
             # Engine lost track; reset conservatively.
             self._consec_search_misses = 0
             return
+        # T-30e H-1: apply own-search outcome to belief state.
+        if self._belief is not None:
+            try:
+                self._belief.apply_our_search(loc, bool(hit))
+            except Exception:
+                # Defensive: on any belief error, don't block gameplay.
+                pass
         if hit:
             self._consec_search_misses = 0
         else:

@@ -55,15 +55,16 @@ def test_ceiling_configurable():
 
 
 def test_start_turn_respects_six_second_ceiling():
-    """With generous time_left, a 'critical' turn is still capped at
-    per_turn_ceiling_s -- NOT the 3.0 s v0.1 value, NOT 1.6x*base."""
+    """With generous time_left on a midgame turn, the 6 s
+    per_turn_ceiling_s pins the budget. (Use turns_left=10 to stay
+    out of the T-30e endgame ceiling regime.)
+    """
     b = _board()
-    # Force "critical": turns_left <= 4 triggers it.
-    b.player_worker.turns_left = 2
-    # 60s of wall-time remaining with 2 turns left -> base = 29.75s,
-    # critical multiplier = 1.6 -> 47.6s; ceiling should pin it.
+    b.player_worker.turns_left = 10  # > ENDGAME_TURNS_THRESHOLD=5
+    # 120 s remaining / 10 turns -> base = 11.95 s * 1.0 = 11.95 s;
+    # 6 s ceiling pins it.
     tm = TimeManager(per_turn_ceiling_s=6.0)
-    budget = tm.start_turn(b, lambda: 60.0)
+    budget = tm.start_turn(b, lambda: 120.0)
     assert budget == 6.0, f"expected ceiling=6.0, got {budget}"
 
 
@@ -78,11 +79,14 @@ def test_start_turn_below_ceiling_is_untouched():
 
 
 def test_custom_ceiling_overrides_default():
-    """A user-configured 3.0 s ceiling still works (flip-trigger path)."""
+    """A user-configured 3.0 s ceiling still works at midgame.
+    Post-T-30e the endgame ceiling is max(per_turn_ceiling_s, 20 s), so
+    this test pins `turns_left=10` to exercise the non-endgame path.
+    """
     b = _board()
-    b.player_worker.turns_left = 2
+    b.player_worker.turns_left = 10  # > ENDGAME_TURNS_THRESHOLD=5
     tm = TimeManager(per_turn_ceiling_s=3.0)
-    budget = tm.start_turn(b, lambda: 60.0)
+    budget = tm.start_turn(b, lambda: 120.0)
     assert budget == 3.0
 
 
@@ -189,33 +193,34 @@ def test_endgame_multiplier_extended_at_low_turns_left():
     """With turns_left <= ENDGAME_TURNS_THRESHOLD, the surplus hard-cap
     should be ENDGAME_HARD_CAP_MULT (3.5x), not the default 2.5x.
 
-    Set `turns_left=3` and a high `time_left`. Construct a TimeManager
-    with a large per_turn_ceiling_s so the cap dominates, not the
-    ceiling. Force `critical` multiplier (1.6x) via turns_left <= 4;
-    1.6x < 3.5x so the cap binding is what we want to observe. With
-    `time_left=60`, `usable=59.5`, `base=usable/3=19.833`, and the
-    3.5x cap gives 69.42 while 2.5x would give 49.58. Asserting
-    budget > 2.5x base demonstrates the endgame lift fired.
+    Post-T-30e the budget is bounded by
+      min(base * 3.5, effective_ceiling, usable)
+    where effective_ceiling = max(per_turn_ceiling_s, ENDGAME_HARD_CEILING_S).
+    With per_turn_ceiling_s=1e6, ceiling is 1e6, so the remaining
+    binding upper bound is min(base*3.5, usable).
     """
     assert ENDGAME_TURNS_THRESHOLD >= 3
     assert ENDGAME_HARD_CAP_MULT > HARD_CAP_MULT
 
     b = _board()
     b.player_worker.turns_left = 3
-    tm = TimeManager(per_turn_ceiling_s=1e6)  # disable ceiling clamp
-    budget = tm.start_turn(b, lambda: 60.0)
+    tm = TimeManager(per_turn_ceiling_s=1e6)  # ceiling effectively off
+    # Use time_left large enough that `usable` dominates neither:
+    # time_left=300 → usable=299.5, base=99.83, base*3.5=349.4 → clamp
+    # to usable=299.5 — budget above 2.5×base=249.58 confirms the lift.
+    budget = tm.start_turn(b, lambda: 300.0)
 
-    usable = 60.0 - tm.safety_s
+    usable = 300.0 - tm.safety_s
     base = usable / 3
-    old_cap = base * HARD_CAP_MULT       # 49.58 s
-    new_cap = base * ENDGAME_HARD_CAP_MULT  # 69.42 s
+    old_cap = base * HARD_CAP_MULT       # 249.58 s
+    new_cap = base * ENDGAME_HARD_CAP_MULT  # 349.42 s
+    bounded = min(new_cap, usable)
 
     assert budget > old_cap + 1e-6, (
         f"budget {budget:.3f}s did not clear 2.5x base={old_cap:.3f}s"
     )
-    # Exact new cap when critical-multiplier * base >= new_cap.
-    assert budget == new_cap, (
-        f"expected endgame cap {new_cap:.3f}s, got {budget:.3f}s"
+    assert abs(budget - bounded) < 1e-6, (
+        f"expected {bounded:.3f}s, got {budget:.3f}s"
     )
 
 
