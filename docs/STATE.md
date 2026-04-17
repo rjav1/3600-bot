@@ -1,7 +1,7 @@
 # STATE — Rolling Snapshot
 
-**Last updated:** 2026-04-16 (research-synthesizer finished SYNTHESIS.md)
-**Current phase:** Phase 0 — Foundations (wave 1 synthesized; ready for Phase 1 Strategy-Architect)
+**Last updated:** 2026-04-16 (strategy-architect finished BOT_STRATEGY.md v1.0)
+**Current phase:** Phase 1 — Strategy blueprint (BOT_STRATEGY.md v1.0 delivered; awaiting strategy-contrarian red-team before Phase 2/3)
 **Deadline:** 2026-04-19 23:59
 
 ## Active agents
@@ -15,6 +15,7 @@
 | researcher-heuristic | researcher-heuristic | RESEARCH_HEURISTIC.md   | completed |
 | contrarian-scope     | contrarian-scope     | CONTRARIAN_SCOPE.md     | completed |
 | research-synthesizer | research-synthesizer | SYNTHESIS.md            | completed |
+| strategy-architect   | strategy-architect   | BOT_STRATEGY.md v1.0    | completed |
 
 ## Recent decisions
 
@@ -28,16 +29,22 @@
 - **R-SEARCH-001** (2026-04-16): Adversarial-search research delivered in `docs/research/RESEARCH_ADVERSARIAL.md`. Empirical branching factor **b ≈ 6.3–6.8 excluding SEARCH** (p90=8, late-max=11); **~70 with all 64 SEARCH moves**. Pure-Python throughput: 50 k node-expansions/sec, 318 k move-gen/sec, 48 k full-step/sec. Projected feasible α-β+ID+TT depth: **6–8 ply pure Python, 9–11 ply with numba leaf eval**. Eight candidates surveyed with pseudocode + 1–5 suitability (expectiminimax, *-minimax/Star1-2, α-β+ID+TT+Zobrist, MCTS-UCT, IS-MCTS, PUCT, beam, 1-ply policy) — no winner picked per the contrarian brief. Tentative defaults (all flippable): (1) rat belief as leaf-potential NOT in-tree chance nodes — keeps b at ~7 and matches R-HMM-001; (2) SEARCH excluded from tree, root-only EV-gated at `P(rat)>1/3`; (3) ID controller + 0.2 s safety + 0.6×/1.0×/1.6× adaptive multipliers; (4) move ordering stack = hash-move → killer → history → type-priority → immediate-point-delta; (5) NO null-move pruning (primed-line Zugzwang analogs), NO magic bitboards. 10 open decisions for Strategy-Architect in doc §I. Note: benchmarks above were run without `limit_resources=True`; tournament sandbox may shift nps ±20%, per C-SCOPE E-1.
 - **SYN-001** (2026-04-16): Wave-1 synthesis delivered in `docs/research/SYNTHESIS.md`. (a) §A–B consolidate 20 cross-confirmed agreed facts and consensus recommendations (α-β+ID+TT backbone, F2 9-feature linear heuristic with Carrie-style `P(c)` distance-discount, `p_0 = e_0 @ T^1000` prior and reset, SEARCH as manual chance node, `limit_resources=True` pinned, paired-match eval). (b) §C surfaces 8 unresolved tensions — reactive-floor-bot vs deep-arch insurance, in-tree vs leaf belief, max-belief vs min-entropy vs weighted search objective, F2 vs NN vs reactive, research-depth vs early-ship, architecture-selection bias, opponent-modeling priority, local-vs-tournament clock skew. (c) §D lists 22 open architectural choices with provisional defaults and flip-triggers; §E is a de-duplicated risk register (3 critical, 8 high, 9 medium) with owners; §F is a 15-row evidence-flipping matrix pre-committing falsifiable switch rules; §G is the Strategy-Architect 10-step decision agenda. Flagged missing pieces: no quantitative reactive-vs-primary ELO delta, unreconciled `≤ 100 μs per eval` vs `9–11 ply numba` envelope, HMM→search interface undecided.
 - **C-SCOPE-001** (2026-04-16): Red-team critique delivered in `docs/research/CONTRARIAN_SCOPE.md`. No pipeline-halting issue. Top recommendations (Phase-1-blockers): (1) enforce `limit_resources=True` in all benchmarking — dev-vs-tournament time/sandbox gap is underweighted; (2) rewrite `RESEARCH_ADVERSARIAL.md` brief to compare architectures (expectiminimax / MCTS / reactive policy / opponent-model), current scope is anchored on expectiminimax; (3) ship a reactive-policy floor bot by ~hour 12 as grade-floor (70%) insurance, before any deep architecture commit; (4) switch to paired-match eval (same T/spawn/seed) — 50 unpaired matches has ±14 pp 95% CI, inadequate for detecting 5 pp improvements; (5) add 1-day "opponent-specific exploit" track (model George/Albert/Carrie explicitly) — highest-leverage alt at ~0.25-0.35 P(beats Carrie); (6) honest grade-probability estimates: P(>70%)≈0.90, P(>80%)≈0.55, P(>90%)≈0.25.
+- **STRAT-001** (2026-04-16): BOT_STRATEGY.md v1.0 delivered in `docs/plan/BOT_STRATEGY.md` by strategy-architect. Resolves all 22 SYN §D open architectural choices; see Appendix A. Agent-folder name committed: `RattleBot`. Headline decisions in D-004/D-005/D-006 below. v1.0 pending strategy-contrarian red-team (Phase 1 pipeline exit).
+
+- **D-004** (2026-04-16): **Architecture committed: α-β + iterative deepening + Zobrist TT, with belief-as-leaf-potential (NOT in-tree rat chance nodes), and root-only EV-gated SEARCH.** Heuristic: F2 9-feature linear heuristic with Carrie-style cell-potential distance-discount, CMA-ES-tuned. Time manager: adaptive ID with 0.2 s safety + 0.6×/1.0×/1.6× multipliers + 2.5× cap. See BOT_STRATEGY.md §2 for the full walk of SYN §G. Alternatives explicitly dismissed (§2.a, §8): MCTS/PUCT/ISMCTS, beam search, null-move pruning, magic bitboards, NN-from-scratch. Contrarian dissent: pending from strategy-contrarian.
+- **D-005** (2026-04-16): **Module decomposition committed.** Package layout `3600-agents/RattleBot/{agent.py, rat_belief.py, search.py, heuristic.py, move_gen.py, time_mgr.py, zobrist.py, types.py}` per BOT_STRATEGY.md §3. Interface between HMM and search: a `BeliefSummary` dataclass with `(belief, entropy, max_mass, argmax, top8)`. Per-call budgets: HMM update ≤ 2 ms, leaf eval ≤ 100 μs tournament mode, TT = 2^20 × 2-slot. See §3 + Appendix B for the full commitments list.
+- **D-006** (2026-04-16): **FloorBot/primary relationship: FloorBot is the active live submission from T − 60 h. RattleBot is promoted to live only after passing a 4-condition gate (≥ 60 % paired vs FloorBot, ≥ 200 matches without crash/timeout, T-LIVE-1 pass, auditor sign-off). RattleBot embeds FloorBot's `emergency_fallback` as a try/except catch-all at every `play()` call.** Opponent-specific exploit (CON §C-6) pre-scheduled at T − 36 h as a parallel track, not a blocking path. See BOT_STRATEGY.md §6 and §2.j.
 
 ## Blockers
 
-None pipeline-halting. Top-priority items the orchestrator should address before Phase 1 per `docs/research/CONTRARIAN_SCOPE.md` §F: the time-budget note in CLAUDE.md (A-1), sandbox-test gap (E-1), architecture-comparison rewrite (B-2), reactive floor-bot insurance (C-1), partner activation protocol (B-7).
+None pipeline-halting. Phase 2 is blocked pending strategy-contrarian red-team of `docs/plan/BOT_STRATEGY.md` v1.0 — orchestrator should spawn contrarian as next wave. Open risk-register items with owners in BOT_STRATEGY.md §9.
 
 ## Open loops
 
-- Agent folder for our bot has not been created yet. Recommended name TBD (proposed: `RattleBot`).
-- No test infrastructure yet; Tester-Local will build a batch runner in Phase 3.
+- Agent folder `3600-agents/RattleBot/` not created yet (BOT_STRATEGY.md §3 commits the name; dev-integrator T-12 task scaffolds it).
+- Test infrastructure: Tester-Local paired-match batch runner is pipeline task T-17 (blocks ELO-gate measurements).
 - bytefight.org credentials / session — Tester-Live needs to confirm the user is logged in on Chrome before uploads.
+- R-PARTNER-01 (BOT_STRATEGY.md §9): orchestrator must confirm partner-lock-in protocol with user (rahiljav@gmail.com) before first live upload.
 
 ## Top-3 surprising discoveries from GAME_SPEC work
 
