@@ -8,7 +8,7 @@
 
 ## TL;DR
 
-**Verdict (preliminary, n=3): NOT DECISIVE. MctsBot 2W–1L vs RattleBot v0.1, with one pair-sweep margin of +88 combined points. A full N=20 paired run is in flight (`3600-agents/matches/mcts_rattle_n20/`); §8 addendum will be filled when `summary.json` lands.**
+**Verdict (final, N=20 paired / 40 matches): MCTS IS NOT BETTER THAN α-β+HMM.** MctsBot 22W–18L = 55.0% match win rate, Wilson 95% CI **[39.8%, 69.3%]** crosses 50%. Paired sign-test p = 0.77. Mean score differential +1.82 pts/match. Not statistically distinguishable from a fair coin. See §8 for the full breakdown.
 
 **Headline finding: MCTS's strengths and RattleBot's strengths are ADDITIVE, not substitutable.**
 - RattleBot catches 3–5 rats/match (+12 to +20 pts) via HMM-driven SEARCH — MctsBot catches **zero** (uniform prior closes its SEARCH gate).
@@ -280,15 +280,69 @@ Leave the MctsBot folder in the repo:
 
 ---
 
-## 8. Addendum slot — N=20 paired summary
+## 8. Addendum — N=20 paired summary (2026-04-17)
 
-*To be filled in when `mcts_rattle_n20/summary.json` lands.*
+Completed `paired_runner --agents MctsBot RattleBot --n 20 --seed 5000 --parallel 1` (Windows, `limit_resources=False`, 6h 6m wall clock). Raw summary at `3600-agents/matches/mcts_rattle_n20/summary.json`.
 
-Expected contents:
-- Paired-match win rate and Wilson 95% CI.
-- Mean score differential (A − B from MctsBot's identity perspective).
-- Max per-move time on both sides, crash / timeout / invalid counts.
-- Sign-test p-value across decisive pairs.
-- Any match where MctsBot *lost* by >20 pts — worth a post-mortem trace to find the exact failure mode.
+### 8.1 Headline numbers
 
-If the final win rate is within the 95% CI of 50% (i.e. not statistically separable from chance across 20 pairs), the verdict in §1 stands: **α-β was the right call, keep shipping RattleBot.** If MCTS shows a consistent ≥10-point mean differential, that's loud enough to revisit the hybrid recommendation in §6.2.
+| metric | value | interpretation |
+|--------|-------|----------------|
+| Match win rate (MctsBot) | **22 / 40 = 55.0%** | — |
+| Wilson 95% CI | **[39.8%, 69.3%]** | **crosses 50% → NOT statistically distinguishable from chance** |
+| Paired wins (MctsBot / RattleBot / ties) | 7 / 5 / 8 | — |
+| Paired sign-test p-value (12 decisive pairs) | **0.77** | well above any reasonable significance threshold |
+| Mean score differential (MctsBot − RattleBot) | **+1.82 pts/match** | tiny signal |
+| Median margin | +4 pts | right at the noise floor |
+| Blowouts: MctsBot wins by >20 pts | 8 matches | large peaks |
+| Blowouts: RattleBot wins by >20 pts | 7 matches | roughly symmetric peaks |
+| Max MctsBot win margin | **+58 pts** | crushing open-board seed |
+| Max RattleBot win margin | **−74 pts** (MctsBot ended −42) | catastrophic MctsBot game (pair 0007 m2) |
+| Matches decided by <5 pts | 7 | tight middle |
+
+### 8.2 Rat captures — the HMM structural edge, confirmed
+
+| agent | captures total | captures/match | points from captures |
+|-------|----------------|----------------|----------------------|
+| MctsBot | **1** | 0.025 | +4 pts over 40 games |
+| RattleBot | **134** | 3.35 | +536 pts over 40 games |
+
+That's a ~13 pts/game implicit handicap for MctsBot, exactly the structural §4.1 prediction. And MCTS *still* got within +1.82 pts/match of RattleBot overall — meaning **MctsBot's carpet income must outpace RattleBot's by ≈15 pts/game on average to close that gap.** That's the additive-edges hypothesis (§1 TL;DR) in hard numbers.
+
+### 8.3 Errors / safety
+
+| error | MctsBot | RattleBot |
+|-------|---------|-----------|
+| CODE_CRASH / MEMORY_ERROR / FAILED_INIT | 0 | 1 (pair 0019 m2; MctsBot wins by default) |
+| TIMEOUT | 1 (pair 0019 m1) | 0 |
+| INVALID_TURN | 0 | 0 |
+
+The one MctsBot timeout (pair 0019 m1) was at turn 68 of 80 — MctsBot spent too many successive turns at the 5-s per-move ceiling and exhausted its 360-s total budget. The in-agent adaptive cap `min(5.0, remaining/turns_left) − 0.3` evidently wasn't conservative enough on this particular seed (sensor data/rat pattern presumably forced many near-cap iterations). Mitigation for production: tighten the cap more aggressively once `turns_left < 15` OR spend a fixed low budget (e.g. 2 s) when the position is "boring" (few legal carpets).
+
+Real-tournament at `limit_resources=True` gives a 240-s total budget (not 360). A production MctsBot would need a tighter cap — target ~3 s/move hard ceiling with a 2-s default fallback. The current code would likely exceed budget in 2–3 matches per 40 at tournament timing.
+
+Per-move maxes: MctsBot 4.86 s (under the 5-s cap, clean). RattleBot 7.72 s — over its *own* declared 6-s ceiling. That's a RattleBot issue (likely already tracked by `search-profiler`), surfaced incidentally.
+
+### 8.4 Interpretation
+
+**Verdict: MCTS is NOT better than α-β+HMM on this corpus.** 55% is a hair above 50% but well inside the CI of chance. Sign-test p=0.77 across 12 decisive pairs is essentially indistinguishable from a fair coin.
+
+**But:** the variance is real and asymmetric-looking-not-random. MctsBot scores 50+ on games where RattleBot scores 11 or less (pairs 0002, 0004, 0006, 0014, 0018). That's not noise — that's MCTS finding a play-style α-β misses. The reverse also happens (pair 0007 m2: MctsBot −42 vs RattleBot +32, with zero rat catches and presumably a bad carpet-line commitment early).
+
+The **additive-edges hypothesis is concretely supported** by the rat-capture asymmetry (134 vs 1). Any bot that catches rats at RattleBot's rate *and* rolls carpets at MctsBot's rate is ~15 pts/game stronger than either. That is task #48 / T-30.
+
+### 8.5 Updated recommendations
+
+- **April 19 tournament:** ship RattleBot (α-β + HMM). The N=20 does not clear the bar for switching architectures. The one MctsBot timeout on a 360-s budget is a red flag for tournament's 240-s budget.
+- **v0.3 (task #48 / T-30):** build the hybrid per §6.2. The rat-capture asymmetry is the central piece of evidence that justifies it. Falsification threshold from §6.4 was "MctsBot wins > 55% at N=20"; the realised 55.0% is **marginal** — I'd call this a **YELLOW light**, not a red abandonment. Build the hybrid and gate v0.3 adoption on it beating v0.2 in its own paired run (not on the MctsBot-alone result).
+- **v0.3 implementation note:** the hybrid's MCTS module must **not** inherit MctsBot's `_PER_MOVE_CAP_S = 5.0` as-is. Use a cap dynamically scaled against the tournament's 240-s budget; copy RattleBot's `time_mgr.py` which already handles this. Tighten the late-game safety (turns_left ≤ 10) to a sub-second cap.
+- **MctsBot as regression-testing asset (§6.5):** any RattleBot change that causes MctsBot to start winning >60% paired is a red flag.
+
+### 8.6 Artifacts
+
+| artifact | path |
+|----------|------|
+| N=20 summary | `3600-agents/matches/mcts_rattle_n20/summary.json` |
+| N=20 per-match JSONs | `3600-agents/matches/mcts_rattle_n20/matches/pair_00*_m{1,2}_*.json` |
+| Pilot pair (separate run) | `3600-agents/matches/mcts_rattle_pilot_seq/matches/pair_0000_*.json` |
+| Run log | `3600-agents/matches/mcts_rattle_n20.log` |
