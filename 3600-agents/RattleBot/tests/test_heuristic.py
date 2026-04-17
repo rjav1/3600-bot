@@ -59,27 +59,38 @@ from RattleBot.types import BeliefSummary  # noqa: E402
 # Fixtures
 
 
-def _uniform_belief_summary() -> BeliefSummary:
-    belief = np.full(64, 1.0 / 64, dtype=np.float64)
-    entropy = float(-np.sum(belief * np.log(belief)))
+def _bs_from_belief(belief: np.ndarray) -> BeliefSummary:
+    nz = belief > 0.0
+    entropy = float(-np.sum(belief[nz] * np.log(belief[nz])))
+    xs = np.tile(np.arange(BOARD_SIZE, dtype=np.float64), BOARD_SIZE)
+    ys = np.repeat(np.arange(BOARD_SIZE, dtype=np.float64), BOARD_SIZE)
     return BeliefSummary(
         belief=belief,
         entropy=entropy,
         max_mass=float(belief.max()),
         argmax=int(belief.argmax()),
+        com_x=float(np.dot(belief, xs)),
+        com_y=float(np.dot(belief, ys)),
     )
+
+
+def _uniform_belief_summary() -> BeliefSummary:
+    belief = np.full(64, 1.0 / 64, dtype=np.float64)
+    return _bs_from_belief(belief)
 
 
 def _peaky_belief_summary(peak_idx: int = 27, peak: float = 0.9) -> BeliefSummary:
     belief = np.full(64, (1.0 - peak) / 63, dtype=np.float64)
     belief[peak_idx] = peak
-    entropy = float(-np.sum(belief * np.log(belief + 1e-18)))
-    return BeliefSummary(
-        belief=belief,
-        entropy=entropy,
-        max_mass=float(belief.max()),
-        argmax=int(belief.argmax()),
-    )
+    return _bs_from_belief(belief)
+
+
+def _point_mass_belief_summary(xy) -> BeliefSummary:
+    """Belief concentrated on a single cell — for F13 COM tests."""
+    belief = np.zeros(64, dtype=np.float64)
+    x, y = xy
+    belief[y * BOARD_SIZE + x] = 1.0
+    return _bs_from_belief(belief)
 
 
 def _fresh_board(player_pos=(2, 3), opp_pos=(5, 3), blockers=True) -> Board:
@@ -158,13 +169,7 @@ def _random_belief(rng: random.Random) -> BeliefSummary:
         [rng.random() ** 2 for _ in range(64)], dtype=np.float64
     )
     raw = raw / raw.sum()
-    entropy = float(-np.sum(raw * np.log(raw + 1e-18)))
-    return BeliefSummary(
-        belief=raw,
-        entropy=entropy,
-        max_mass=float(raw.max()),
-        argmax=int(raw.argmax()),
-    )
+    return _bs_from_belief(raw)
 
 
 # ----------------------------------------------------------------------
@@ -259,14 +264,27 @@ def test_symmetry():
     # F11/F12 are perspective-invariant
     assert feats_fwd[5] == feats_rev[5]
     assert feats_fwd[6] == feats_rev[6]
+    # F8 — under reverse_perspective, the "opponent" becomes the old
+    # player, so F8 (always measured off opp_worker.position) should
+    # report the threat from what was previously OUR worker. The two
+    # positions differ, so F8 values need not match; we just assert the
+    # feature was computed (finite int-valued float in [0, 7]).
+    assert 0.0 <= feats_fwd[7] <= 7.0
+    assert 0.0 <= feats_rev[7] <= 7.0
+    # F13 — also perspective-dependent through the worker position.
+    # Belief COM is perspective-invariant; worker position swaps.
+    # So F13 post-reversal = Manhattan(old opp, COM). Just check both
+    # sides are non-negative and bounded by the board diameter (14).
+    assert 0.0 <= feats_fwd[8] <= 14.0
+    assert 0.0 <= feats_rev[8] <= 14.0
 
 
 def test_per_call_timing():
-    """p99 per-call should be <= 100 µs on 10k random boards.
+    """p99 per-call should be <= 150 µs on 10k random boards (v0.2 budget
+    bumped from 100 us for the 9-feature vector per team-lead T-20c brief).
 
-    Uses time.perf_counter_ns(). Soft-fails (prints warning) if system
-    is noisy but hard-fails if median is > 100 µs — that indicates
-    an actual algorithmic regression.
+    Uses time.perf_counter_ns(). Soft-warns if p99 > 150 µs but hard-fails
+    if median is > 150 µs — that indicates an actual algorithmic regression.
     """
     rng = random.Random(0xBEEF)
     n = 10_000
@@ -290,18 +308,19 @@ def test_per_call_timing():
         f"p50={p50:.1f}us  p99={p99:.1f}us  max={p100:.1f}us"
     )
 
-    # Hard gates: median must fit in budget, and p99 must too.
-    assert p50 < 100.0, (
-        f"median eval time {p50:.1f}us exceeds 100us budget"
+    BUDGET_US = 150.0
+    assert p50 < BUDGET_US, (
+        f"median eval time {p50:.1f}us exceeds {BUDGET_US}us budget"
     )
-    # Allow slack on p99 because Windows timer jitter / GC can spike it.
-    # Task brief target is p99 <= 100 us; we report and hard-fail at 250us.
-    if p99 > 100.0:
+    if p99 > BUDGET_US:
         print(
-            f"[timing] WARN: p99={p99:.1f}us exceeds 100us target — "
-            f"profile in v0.2."
+            f"[timing] WARN: p99={p99:.1f}us exceeds {BUDGET_US}us target — "
+            f"profile before BO tuning."
         )
-    assert p99 < 250.0, f"p99 eval time {p99:.1f}us >> 100us — regression"
+    # Allow timer jitter slack; hard-fail at 3x budget.
+    assert p99 < 3 * BUDGET_US, (
+        f"p99 eval time {p99:.1f}us >> {BUDGET_US}us — regression"
+    )
 
 
 def test_high_max_belief_triggers_search_signal():
@@ -330,16 +349,104 @@ def test_high_max_belief_triggers_search_signal():
     )
     # Magnitude sanity: the drop should be at least |delta_f11| minus
     # F12 jitter (entropy goes down too when belief is peaky, and
-    # W_INIT[6] is negative, so that adds a positive offset).
+    # W_INIT[6] is negative, so that adds a positive offset). F13 also
+    # shifts a little because peaky COM ≠ uniform COM.
     observed_drop = v_low - v_high
-    # Loose bound: observed drop should be within a few units of the
-    # F11 + F12 analytical delta.
     delta_f12 = W_INIT[6] * (bs_high.entropy - bs_low.entropy)
-    analytical = -(delta_f11 + delta_f12)
+    # F13 delta: Manhattan(worker, COM_high) - Manhattan(worker, COM_low)
+    wx, wy = board.player_worker.position
+    d13_low = abs(wx - bs_low.com_x) + abs(wy - bs_low.com_y)
+    d13_high = abs(wx - bs_high.com_x) + abs(wy - bs_high.com_y)
+    delta_f13 = W_INIT[8] * (d13_high - d13_low)
+    analytical = -(delta_f11 + delta_f12 + delta_f13)
     assert abs(observed_drop - analytical) < 1e-6, (
         f"eval delta {observed_drop} diverged from analytical "
-        f"{analytical} — are F5/F7 varying unexpectedly?"
+        f"{analytical} — are F5/F7/F8 varying unexpectedly?"
     )
+
+
+def test_f8_opp_line_threat_on_primed_line():
+    """F8 must report the contiguous primed-line length the opp can roll.
+
+    Construct: opp at (2, 4); prime (3, 4), (4, 4), (5, 4), (6, 4).
+    Expected F8 = 4 (four PRIMED cells directly east of opp).
+    """
+    board = _fresh_board(player_pos=(0, 0), opp_pos=(2, 4), blockers=False)
+    for loc in [(3, 4), (4, 4), (5, 4), (6, 4)]:
+        board.set_cell(loc, Cell.PRIMED)
+    bs = _uniform_belief_summary()
+    feats = features(board, bs)
+    assert feats[7] == 4.0, f"F8 expected 4.0, got {feats[7]}"
+
+    # Add a CARPET at (7,4) — doesn't extend the primed line.
+    board.set_cell((7, 4), Cell.CARPET)
+    assert features(board, bs)[7] == 4.0
+
+    # Interrupt the line with a gap (unset (4, 4) to SPACE).
+    board.set_cell((4, 4), Cell.SPACE)
+    assert features(board, bs)[7] == 1.0, (
+        "F8 should stop at the first non-primed cell"
+    )
+
+    # No primes anywhere → F8 = 0.
+    for loc in [(3, 4), (5, 4), (6, 4)]:
+        board.set_cell(loc, Cell.SPACE)
+    assert features(board, bs)[7] == 0.0
+
+
+def test_f8_no_threat_from_carpet_or_space():
+    """Carpet/space cells don't contribute to F8 — opp must PRIME them
+    first, so they're not an imminent threat."""
+    board = _fresh_board(player_pos=(0, 0), opp_pos=(2, 4), blockers=False)
+    for loc in [(3, 4), (4, 4), (5, 4)]:
+        board.set_cell(loc, Cell.CARPET)
+    bs = _uniform_belief_summary()
+    assert features(board, bs)[7] == 0.0
+
+
+def test_f13_com_dist_monotone():
+    """F13 must increase with Manhattan distance from worker to the
+    belief center-of-mass. Construct three point-mass beliefs at
+    (3,3), (0,0), (7,7) with worker at (3,3)."""
+    board = _fresh_board(player_pos=(3, 3), opp_pos=(5, 3), blockers=False)
+
+    bs_here = _point_mass_belief_summary((3, 3))
+    bs_near = _point_mass_belief_summary((4, 4))
+    bs_far_nw = _point_mass_belief_summary((0, 0))
+    bs_far_se = _point_mass_belief_summary((7, 7))
+
+    f_here = features(board, bs_here)[8]
+    f_near = features(board, bs_near)[8]
+    f_far_nw = features(board, bs_far_nw)[8]
+    f_far_se = features(board, bs_far_se)[8]
+
+    assert f_here == 0.0, f"COM at worker -> F13=0 expected, got {f_here}"
+    assert f_near == 2.0, f"COM at (4,4) worker (3,3) -> F13=2 expected, got {f_near}"
+    assert f_far_nw == 6.0, f"COM at (0,0) worker (3,3) -> F13=6 expected, got {f_far_nw}"
+    assert f_far_se == 8.0, f"COM at (7,7) worker (3,3) -> F13=8 expected, got {f_far_se}"
+    # Monotonic ordering
+    assert f_here < f_near < f_far_nw < f_far_se
+
+
+def test_f13_fallback_when_com_missing():
+    """If BeliefSummary lacks com_x/com_y, heuristic should fall back to
+    computing COM on the fly. Tests backwards-compat with v0.1 callers.
+    """
+    belief = np.zeros(64, dtype=np.float64)
+    belief[3 * BOARD_SIZE + 5] = 1.0  # (x=5, y=3)
+    # build BeliefSummary without com_x/com_y
+    bs = BeliefSummary(
+        belief=belief,
+        entropy=0.0,
+        max_mass=1.0,
+        argmax=int(belief.argmax()),
+        com_x=None,
+        com_y=None,
+    )
+    board = _fresh_board(player_pos=(3, 3), opp_pos=(5, 3), blockers=False)
+    feats = features(board, bs)
+    # Manhattan((3,3), (5,3)) = 2
+    assert feats[8] == 2.0, f"F13 fallback path wrong: got {feats[8]}"
 
 
 def test_class_wrapper_matches_module_fn():
@@ -385,6 +492,10 @@ def _run_all():
         test_symmetry,
         test_per_call_timing,
         test_high_max_belief_triggers_search_signal,
+        test_f8_opp_line_threat_on_primed_line,
+        test_f8_no_threat_from_carpet_or_space,
+        test_f13_com_dist_monotone,
+        test_f13_fallback_when_com_missing,
         test_class_wrapper_matches_module_fn,
         test_weight_shape_validation,
     ]

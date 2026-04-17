@@ -57,6 +57,11 @@ _NOISE_LIK = np.array(
 _DIST_OFFSETS = (-1, 0, 1, 2)
 _DIST_PROBS = (0.12, 0.70, 0.12, 0.06)
 
+# Flat (64,) arrays of cell x and y coordinates; used for belief center-of-mass
+# (v0.2 F13). `com = float(np.dot(belief, _COM_X_COORDS))` is one BLAS call.
+_COM_X_COORDS = np.tile(np.arange(BOARD_SIZE, dtype=np.float64), BOARD_SIZE)
+_COM_Y_COORDS = np.repeat(np.arange(BOARD_SIZE, dtype=np.float64), BOARD_SIZE)
+
 # Max true distance on an 8x8 grid: (0,0) <-> (7,7) = 14.
 _MAX_TRUE_DIST = (BOARD_SIZE - 1) * 2  # 14
 # Max reported distance = 14 + 2 (offset) = 16.
@@ -235,11 +240,16 @@ class RatBelief:
         entropy = float(-np.sum(b[nz] * np.log(b[nz])))
         if entropy < 0.0:  # guard against fp rounding at the 0 boundary
             entropy = 0.0
+        # Center of mass (v0.2, used by heuristic F13). O(64) — tiny.
+        com_x = float(np.dot(b, _COM_X_COORDS))
+        com_y = float(np.dot(b, _COM_Y_COORDS))
         return BeliefSummary(
             belief=b,
             entropy=entropy,
             max_mass=float(b.max()),
             argmax=int(b.argmax()),
+            com_x=com_x,
+            com_y=com_y,
         )
 
     # ------------------------------------------------------------------

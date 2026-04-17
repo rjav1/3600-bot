@@ -1,33 +1,43 @@
-"""F2 linear leaf evaluator — v0.1.
+"""F2 linear leaf evaluator — v0.2 (9 features).
 
-7-feature linear heuristic per BOT_STRATEGY.md v1.1 §3.4 + D-004 / D-008
-(feature expansion 5 -> 7 in v0.1 scope: F1, F3, F4, F5, F7, F11, F12).
+9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c.
+v0.1 shipped 7 features; v0.2 adds F8 (opponent line threat) and F13
+(belief center-of-mass distance from worker) per AUDIT §3.8 + the
+pre-BO-tuning prep for T-20d.
 
 Features (all float64, sign-carried by W_INIT):
 
-  F1 score_diff                  = player.points - opponent.points
-  F3 ours_prime_count            = popcount(_primed_mask)
-                                   (attribution approximation: we do not
-                                   track who laid which prime, so this is
-                                   total primed cells on the board — see
-                                   caveat in module docstring)
-  F4 ours_carpet_count           = popcount(_carpet_mask)
-                                   (same attribution caveat as F3)
-  F5 longest_primable_line_ours  = Carrie-style cell potential sum near us
-                                   per RESEARCH_HEURISTIC §B.2
-  F7 longest_primable_line_theirs= mirror of F5 from opponent perspective
-  F11 belief_max                 = BeliefSummary.max_mass
-  F12 belief_entropy             = BeliefSummary.entropy
+  F1  score_diff                = player.points - opponent.points
+  F3  ours_prime_count          = popcount(_primed_mask)
+                                  (attribution approximation — engine does
+                                  not track who laid which prime; this is
+                                  whole-board popcount, a perspective-
+                                  invariant proxy that still self-plays
+                                  cleanly per AUDIT §3.8)
+  F4  ours_carpet_count         = popcount(_carpet_mask)
+                                  (same attribution caveat as F3)
+  F5  longest_primable_line_ours  = Carrie-style cell potential at our
+                                    worker per RESEARCH_HEURISTIC §B.2
+  F7  longest_primable_line_theirs= mirror of F5 from opponent perspective
+  F11 belief_max                = BeliefSummary.max_mass
+  F12 belief_entropy            = BeliefSummary.entropy
+  F8  opp_longest_primable      = max_d reach(opp_pos, d) through primed
+                                  cells — sharp opp-roll-next-turn threat
+                                  signal (RESEARCH_HEURISTIC §C.2 F10)
+  F13 belief_com_distance       = Manhattan(our_worker, belief_COM) —
+                                  geometric signal for "am I near where
+                                  the rat probably is"; sharpens sensor
+                                  and cheapens a future search
 
-Public API (module-level, matches task brief T-15):
+Public API (module-level):
 
     evaluate(board, belief_summary, weights=None) -> float
-    features(board, belief_summary) -> np.ndarray   # shape (7,) float64
+    features(board, belief_summary) -> np.ndarray   # shape (9,) float64
 
 A thin Heuristic class is kept for downstream consumers (search engine).
 
 Hyperparams (D-011 item 5): gamma_info=0.5, gamma_reset=0.3 (used by F15
-when it lands in v0.3+; not present in v0.1 feature vector).
+when it lands in v0.3+; not present in the v0.2 feature vector).
 
 Owner: dev-heuristic.
 """
@@ -53,7 +63,7 @@ __all__ = [
 ]
 
 
-N_FEATURES: int = 7
+N_FEATURES: int = 9
 
 # Terminal eval = (player_points - opp_points) * TERMINAL_SCALE.
 # Chosen >> any realistic non-terminal eval so minimax always prefers
@@ -85,9 +95,18 @@ GAMMA_RESET: float = 0.3
 #                      that sitting is good — pushes tree toward root-
 #                      only SEARCH gate (see agent.py)
 #   6   F12    -0.5    low entropy = belief is concentrated = good for us
+#   7   F8     -0.6    opp can roll k>=5 next turn is the single biggest
+#                      point swing (carpet k=5 = 10 pts). Sharper than F7
+#                      but rarer, so ~0.5x F7 magnitude. Sign NEGATIVE
+#                      (opponent threat should never help us).
+#   8   F13    -0.05   Manhattan(our worker, belief COM). Negative — we
+#                      want to be *near* the likely rat cell so future
+#                      sensor draws are sharp and a potential SEARCH is
+#                      cheap. Small magnitude because Manhattan in [0,14]
+#                      would otherwise swamp F1. BO will retune in T-20d.
 #
 W_INIT: np.ndarray = np.array(
-    [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5],
+    [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05],
     dtype=np.float64,
 )
 assert W_INIT.shape == (N_FEATURES,)
@@ -99,6 +118,12 @@ assert W_INIT.shape == (N_FEATURES,)
 
 _BOARD_CELLS: int = BOARD_SIZE * BOARD_SIZE  # 64
 _FULL_MASK: int = (1 << _BOARD_CELLS) - 1
+
+# Flat (64,) arrays of cell x- and y-coordinates; used by F13's fallback
+# path when BeliefSummary.com_x / com_y are not precomputed.
+# `com = float(np.dot(belief, _COM_X_COORDS))` is one BLAS call.
+_COM_X_COORDS = np.tile(np.arange(BOARD_SIZE, dtype=np.float64), BOARD_SIZE)
+_COM_Y_COORDS = np.repeat(np.arange(BOARD_SIZE, dtype=np.float64), BOARD_SIZE)
 
 
 def _popcount(m: int) -> int:
@@ -205,10 +230,92 @@ def _cell_potential_for_worker(
     return best + _LAMBDA * second
 
 
+def _reach_through_primed(
+    primed_mask: int, blocked_mask: int, carpet_mask: int,
+    workers_mask: int, x: int, y: int, dx: int, dy: int,
+) -> int:
+    """Count contiguous PRIMED cells starting one step away from (x, y) in
+    direction (dx, dy). Stops at any non-primed cell (blocked, carpet,
+    space, or worker), or at the board edge. Capped at 7.
+
+    Used by F8: the opponent standing at (x, y) could prime-and-roll
+    along these cells next turn — this is the *threat* length.
+    Note: semantically we could also count k==1 as a "trap" and return 0,
+    but the task spec treats the raw reach count as the signal; w_init
+    sign carries the actual penalty.
+    """
+    # Either already-primed or free-space cells would both let the opp
+    # build a run, but F8 specifically models "opp can carpet-roll NEXT
+    # TURN" which requires the line to already be PRIMED. Free space
+    # would still require extra priming turns.
+    non_primed_blockers = (
+        blocked_mask | carpet_mask | workers_mask | ~primed_mask
+    ) & _FULL_MASK
+
+    k = 0
+    nx, ny = x + dx, y + dy
+    while 0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE:
+        bit = 1 << (ny * BOARD_SIZE + nx)
+        if non_primed_blockers & bit:
+            break
+        k += 1
+        if k == 7:
+            break
+        nx += dx
+        ny += dy
+    return k
+
+
+def _opp_longest_primable(board: board_mod.Board) -> int:
+    """F8 helper: longest already-primed line the opponent could roll
+    starting from their worker position. Bitmask ray scan in 4 dirs.
+    Returns an integer in [0, 7].
+    """
+    ox, oy = board.opponent_worker.position
+    primed = board._primed_mask
+    blocked = board._blocked_mask
+    carpet = board._carpet_mask
+    pw_bit = 1 << (
+        board.player_worker.position[1] * BOARD_SIZE
+        + board.player_worker.position[0]
+    )
+    ow_bit = 1 << (oy * BOARD_SIZE + ox)
+    workers = pw_bit | ow_bit
+    best = 0
+    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+        k = _reach_through_primed(
+            primed, blocked, carpet, workers, ox, oy, dx, dy
+        )
+        if k > best:
+            best = k
+    return best
+
+
+def _belief_com_distance(
+    worker_xy, belief_summary: BeliefSummary
+) -> float:
+    """F13 helper: Manhattan distance from worker to belief center-of-mass.
+
+    Prefers BeliefSummary.com_x / com_y if present (O(1)); falls back to
+    computing COM from `belief` (O(64)) for backwards compat with pre-v0.2
+    callers that did not fill those fields.
+    """
+    if belief_summary.com_x is not None and belief_summary.com_y is not None:
+        cx = belief_summary.com_x
+        cy = belief_summary.com_y
+    else:
+        b = belief_summary.belief
+        # dot-product path; allocates _COM_X_COORDS the first time only.
+        cx = float(np.dot(b, _COM_X_COORDS))
+        cy = float(np.dot(b, _COM_Y_COORDS))
+    wx, wy = worker_xy
+    return abs(wx - cx) + abs(wy - cy)
+
+
 def features(
     board: board_mod.Board, belief_summary: BeliefSummary
 ) -> np.ndarray:
-    """Compute the 7-feature vector (float64) from the perspective of
+    """Compute the 9-feature vector (float64) from the perspective of
     `board.player_worker`. Fast path for leaf eval.
 
     No allocation beyond the returned array; all sub-calculations reuse
@@ -237,6 +344,14 @@ def features(
     out[5] = float(belief_summary.max_mass)
     out[6] = float(belief_summary.entropy)
 
+    # F8 — opp_longest_primable: longest primed run the opponent could
+    # roll next turn. O(4) ray scans through primed cells only.
+    out[7] = float(_opp_longest_primable(board))
+
+    # F13 — belief COM distance from our worker. O(1) if com_x/com_y are
+    # precomputed in BeliefSummary, else O(64) fallback.
+    out[8] = _belief_com_distance((wx, wy), belief_summary)
+
     return out
 
 
@@ -256,7 +371,8 @@ def evaluate(
     Non-terminal:
         return float(dot(weights or W_INIT, features(board, belief_summary)))
 
-    Time budget: p99 <= 100 us over 10k random boards (see tests).
+    Time budget: p99 <= 150 us over 10k random boards at 9 features
+    (v0.2 bumped from 100 us in v0.1; see tests).
     """
     if board.is_game_over():
         return TERMINAL_SCALE * float(

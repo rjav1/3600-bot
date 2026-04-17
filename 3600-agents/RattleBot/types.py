@@ -56,12 +56,20 @@ class BeliefSummary:
         max_mass: max(belief). Range (0, 1].
         argmax:   flat-index (0..63) of the max-mass cell. Ties broken
                   by numpy's argmax (first occurrence).
+        com_x:    belief center-of-mass x-coordinate E_b[x] in [0, 7].
+                  Used by heuristic feature F13 (belief_com_distance).
+                  If `None`, heuristic computes it from `belief` on demand
+                  (kept None-able for backwards-compat with pre-v0.2
+                  callers of rat_belief.summary()).
+        com_y:    belief center-of-mass y-coordinate E_b[y] in [0, 7].
     """
 
     belief: np.ndarray
     entropy: float
     max_mass: float
     argmax: int
+    com_x: Optional[float] = None
+    com_y: Optional[float] = None
 
 
 @dataclass
