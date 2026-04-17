@@ -1,6 +1,6 @@
 # STATE — Rolling Snapshot
 
-**Last updated:** 2026-04-16 (floor-bot-dev shipped FloorBot v1; strategy-architect finished BOT_STRATEGY.md v1.0)
+**Last updated:** 2026-04-16 (tester-live BLOCKED on first upload — account has no team; see LIVE-001)
 **Current phase:** Phase 1 — Strategy blueprint (BOT_STRATEGY.md v1.0 delivered; awaiting strategy-contrarian red-team before Phase 2/3)
 **Deadline:** 2026-04-19 23:59
 
@@ -35,6 +35,7 @@
 - **D-005** (2026-04-16): **Module decomposition committed.** Package layout `3600-agents/RattleBot/{agent.py, rat_belief.py, search.py, heuristic.py, move_gen.py, time_mgr.py, zobrist.py, types.py}` per BOT_STRATEGY.md §3. Interface between HMM and search: a `BeliefSummary` dataclass with `(belief, entropy, max_mass, argmax, top8)`. Per-call budgets: HMM update ≤ 2 ms, leaf eval ≤ 100 μs tournament mode, TT = 2^20 × 2-slot. See §3 + Appendix B for the full commitments list.
 - **D-006** (2026-04-16): **FloorBot/primary relationship: FloorBot is the active live submission from T − 60 h. RattleBot is promoted to live only after passing a 4-condition gate (≥ 60 % paired vs FloorBot, ≥ 200 matches without crash/timeout, T-LIVE-1 pass, auditor sign-off). RattleBot embeds FloorBot's `emergency_fallback` as a try/except catch-all at every `play()` call.** Opponent-specific exploit (CON §C-6) pre-scheduled at T − 36 h as a parallel track, not a blocking path. See BOT_STRATEGY.md §6 and §2.j.
 - **D-007** (2026-04-16): **FloorBot v1 shipped at `3600-agents/FloorBot/`** per contrarian recommendation #3 and D-006 — 5-priority reactive policy (carpet ≥ 2 → extend/start prime → plain toward open area → any valid → random-fallback), ≤ 180 LOC, zero lookahead, entire `play` body wrapped in try/except. 50 local matches each side vs Yolanda: **100/100 wins, 0 crashes, 0 timeouts, 0 invalid moves**. Per-move wall-time p99 = 0.034 ms, max = 0.061 ms (3 orders of magnitude under the 50 ms target). Design philosophy, decision rules, weaknesses, and activation criteria live in `docs/plan/FLOOR_BOT.md`. This is our 70 %-tier insurance submission and the baseline gate for RattleBot promotion.
+- **LIVE-001** (2026-04-16): **First bytefight.org upload attempt BLOCKED** — account is logged in as `Rjav` / `rjavid3@gatech.edu` (not `rahiljav@gmail.com` as CLAUDE.md suggests) but is **not on a team**. Profile says "Team & Competition History: Coming soon..."; competition sidebar shows Create/Join Team instead of a team page. No upload/submit UI is reachable until a team exists. FloorBot.zip was built and verified (depth-1 layout `FloorBot/agent.py` + `FloorBot/__init__.py`, ~3 KB) and staged at `C:\Users\rahil\AppData\Local\Temp\FloorBot.zip`. Paused without creating a team because team name is public-facing and partner-submission protocol (R-PARTNER-01) is unresolved. Trip report: `docs/tests/LIVE_UPLOAD_001.md`. Pinging team-lead for go/no-go on team creation.
 
 ## Blockers
 
