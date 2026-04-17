@@ -82,3 +82,73 @@ Append-only. Each entry: ID, date, decision, rationale, dismissed alternatives, 
 
 **Contrarian dissent (2026-04-16, strategy-contrarian, CONTRARIAN_STRATEGY.md):** **AMEND** four gate-condition details — the FloorBot/promotion structure itself is endorsed (CON §C-1 insurance argument is correct; D-007 shipped is strong). (1) Gate condition 1 (≥ 60 % paired / 100 matches) has a marginal 95 % CI (≈ 54–66 %) — promote to ≥ 65 % OR expand to ≥ 58 % / 200 matches. (2) T-LIVE-1 choice of George is wrong opponent for the live gate — FloorBot already beats George, so "RattleBot beats George 3-of-5" doesn't prove the promotion case. Change to `3-of-5 vs George AND ≥ 1 non-loss in 3 vs Albert`. (3) Gate condition 4 "auditor sign-off" is undefined — turns a 4-condition gate into a 3-condition gate + subjective veto; concretize as "AUDIT_V03.md exists and enumerates T-HMM-1/2, T-SRCH-1/2/3, T-HEUR-1/2 pass/fail with zero open severity-Critical findings and FloorBot fallback verified in agent.py try/except". (4) Gate condition 2 (≥ 200 crashless) endorsed as-is. Opp-exploit pre-schedule at T-36 h endorsed, with added precondition: blocked on ≥ 10 live scrimmage matches existing before dev-opponent-model work begins (otherwise modeling is guesswork per CON §G-1 revised cost).
 
+---
+
+## D-008 — 2026-04-17 — BOT_STRATEGY.md v1.1 ratified (contrarian red-team integrated)
+
+**Decision:** Ratify `docs/plan/BOT_STRATEGY.md` v1.1, which integrates the full red-team from `docs/plan/CONTRARIAN_STRATEGY.md`. All 7 MUST-CHANGE items (CON-STRAT §J.1–J.7) and 4 SHOULD-CHANGE items (J.8–J.13) addressed as ACCEPT or ACCEPT-MODIFIED. No items rejected. v1.1 §0 "Arbitration Register" records each verdict verbatim. Dev wave (T-12 onward) is unblocked.
+
+**Rationale:** The contrarian's critiques are all evidence-backed and the architect's v1.0 defects were real: (a) performance-budget envelope was internally inconsistent (100 μs leaf × 30 k nps projection doesn't reach d=8 in 6 s); (b) γ_info / γ_reset were inverted vs HEUR §H.3 F15; (c) CMA-ES wall-clock didn't fit in the v0.2 window; (d) v0.1 feature-set dropped F5 (the documented 80→90 % lever); (e) HMM first-turn guard missing (subtle double-predict); (f) promotion gate had one vague condition ("auditor sign-off") and too-permissive threshold (60 %/100 paired). Accepting all 11 MUST/SHOULD items costs negligible additional engineering (most are one-liners or doc clarifications) and materially reduces risk. Specific decisions factored out into D-009, D-010, D-011 below for traceability.
+
+**Alternatives dismissed:**
+- Reject contrarian in parts and let orchestrator arbitrate: rejected — every item is evidence-backed; the honest response is ACCEPT with modification where scope can be tightened.
+- Defer critique integration to "after v0.1 ships": rejected — several items (HMM first-turn bug, SEARCH invariant) are load-bearing for v0.1 correctness; fixing in v1.2 means shipping a known-buggy v0.1.
+
+**Contrarian dissent:** N/A (this entry is the contrarian integration).
+
+---
+
+## D-009 — 2026-04-17 — Weight-tuning: Bayesian optimization replaces CMA-ES as v0.2 default
+
+**Decision:** The v0.2 tuning method is **Bayesian optimization** (scikit-optimize or similar), 25 trials × 50 paired matches each, parallelized with `n_workers = cpu_count() − 1`. CMA-ES is retained as a v0.3+ stretch only if BO completes and compute slack (≥ 12 h) remains. Hand-tuned `w_init` is the ultimate fallback; if BO fails to beat `w_init` by ≥ +30 ELO on 50 paired matches, ship `w_init`. See BOT_STRATEGY.md §2.c and §4 v0.2 row.
+
+**Rationale:** CON-STRAT §F-1 showed v1.0's CMA-ES budget (100 evaluations × 50 matches × 30–60 s/match = 42–83 h sequential) exceeds the ~10 h available in the v0.2 window. Parallelized BO at 25 trials × 50 matches × 30 s ≈ 6–10 h parallel wall-clock fits. BO is better suited to the budget-risk regime because of its stronger early-stopping behavior on smooth fitness surfaces.
+
+**Alternatives dismissed:**
+- Keep CMA-ES and parallelize more aggressively: requires more cores than the user's local machine reliably provides; also CMA-ES needs ≥ 20 samples per generation to avoid degenerate population, which limits parallel speedup.
+- Hand-tune only (skip automated tuning entirely): foregoes the +30 ELO paired-evidence upside at v0.2 gate; BO delivers this at moderate cost.
+- Random-search + picking-best: BO dominates random-search on smooth 9-dim problems (literature consensus).
+
+**Contrarian dissent:** N/A (architect arbitration of contrarian CON-STRAT §F-1 recommendation).
+
+---
+
+## D-010 — 2026-04-17 — Promotion gate tightened + Albert scrimmage added + concrete auditor sign-off
+
+**Decision:** The RattleBot promotion gate (supersedes D-006's gate conditions) is:
+1. **Paired local:** `≥ 65 % over 100 paired matches` OR `≥ 58 % over 200 paired matches` vs FloorBot (whichever satisfied first, under `limit_resources=True`).
+2. **Crash-free:** 0 INVALID_TURN / TIMEOUT / CODE_CRASH across ≥ 200 matches (unchanged from D-006).
+3. **Live scrimmage (T-LIVE-1):** `≥ 3 wins of 5 vs George AND ≥ 1 non-loss of 3 vs Albert`; 0 invalid/timeout/crash in the 8 live matches.
+4. **Concrete auditor sign-off:** `docs/audit/AUDIT_V03.md` exists and records (a) T-HMM-1/2, T-SRCH-1/2/3, T-HEUR-1/2 all PASS, (b) zero OPEN severity-Critical audit findings, (c) crash-gate confirmation, (d) verified `emergency_fallback` try/except in `agent.py`, (e) a one-line "Promotion approved by <name> on <date>".
+
+Everything else in D-006 (RattleBot embeds FloorBot `emergency_fallback`, opp-exploit scheduled at T-36h, one-directional promotion with orchestrator veto) remains in force. See BOT_STRATEGY.md §6.1.
+
+**Rationale:** CON-STRAT §C — 60 %/100 paired has ≈ ±5 pp CI and barely distinguishes a 10 pp improvement from statistical noise; tightening to 65 % or 200 matches restores evidence quality. George-only live scrimmage tests the floor, not the promotion-relevant threshold (FloorBot already beats George); adding Albert gives us actual evidence that RattleBot is brushing the 80 % bracket before we promote. "Auditor sign-off" as unstructured English turned a falsifiable gate into a subjective veto; concrete artifact + enumerated conditions restores rigor.
+
+**Alternatives dismissed:**
+- Keep 60 %/100 + hope: rejected — the evidence threshold is explicitly what differentiates a good paired-match runner from a random coinflip.
+- Live scrimmage vs George only: rejected per above.
+- Auditor sign-off left informal: rejected — the whole point of a gate is falsifiable conditions.
+
+**Contrarian dissent:** N/A (architect arbitration of contrarian CON-STRAT §C recommendation).
+
+---
+
+## D-011 — 2026-04-17 — Technical bug-fixes and interface tightening (v1.1 batch)
+
+**Decision:** Five technical amendments to the v1.0 spec, all ACCEPT. See BOT_STRATEGY.md §0 for the row-level mapping:
+
+1. **HMM first-turn predict-count fix** (CON-STRAT §G-3): on player A's very first `play()` call (`turn_count == 0`), skip steps 1–2 of the 4-step belief pipeline to avoid a double-predict. Implementation: `self._first_call` guard on `RatBelief.update`. Test T-HMM-1 extended to cover this case explicitly.
+2. **SEARCH-not-in-tree invariant assertion** (CON-STRAT §D-2): in `search._alphabeta`, immediately after move-gen returns, `assert all(m.move_type != MoveType.SEARCH for m in ordered_moves)`. Always-on, not debug-gated. Catches the silent-footgun where `apply_move(SEARCH)` is a no-op for points/belief.
+3. **Drop `BeliefSummary.top8`** (CON-STRAT §D-1): simplify the HMM→search interface to `belief + entropy + max_mass + argmax`. Leaves that need top-k-by-arbitrary-weight sort 64 floats on demand (~5 μs).
+4. **Time safety 0.2 s → 0.5 s** (CON-STRAT §E-3): matches `check_win`'s 0.5 s tie-vs-loss band (SPEC §7). Eliminates GC/JIT-pause TIMEOUT risk at negligible wall-clock cost (4 s/game).
+5. **γ_info / γ_reset swap to 0.5 / 0.3** (CON-STRAT §D-4): HEUR §B.2 / §H.3 F15 pairs are `γ_info = 0.5, γ_reset = 0.3`; v1.0 transposed them.
+
+Also adopts CON-STRAT §I-2 (v0.1 feature-set 5 → 7, adding F5/F7) and §I-3 (opp-model precondition: ≥ 10 live scrimmage matches before dev-opponent-model starts); these integrate into D-009 / D-010 via BOT_STRATEGY.md §0 bonus-integration rows 12–14.
+
+**Rationale:** Each item is a surgical fix with a clear evidence line in CON-STRAT. None change the overall architecture (D-004 remains intact); they sharpen the implementation spec. Accepting all five at once avoids a v1.2 round-trip.
+
+**Alternatives dismissed:** Item-by-item rejection of any of the five would require defending v1.0's implementation against contrarian evidence that the architect independently verified was correct. No defensible rejections.
+
+**Contrarian dissent:** N/A (architect arbitration).
+

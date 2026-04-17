@@ -1,13 +1,51 @@
 # BOT_STRATEGY — Authoritative Strategic Plan for the Primary Competitive Bot
 
 **Author:** strategy-architect
-**Date:** 2026-04-16
-**Status:** v1.0, pending red-team by strategy-contrarian (pipeline Phase 1 exit criterion).
+**Date:** 2026-04-16 (v1.0), 2026-04-17 (v1.1)
+**Status:** **v1.1 — ratified**. Incorporates `docs/plan/CONTRARIAN_STRATEGY.md` red-team. Pipeline Phase 1 exit gate passed. Dev wave unblocked.
 **Scope:** `docs/plan/BOT_STRATEGY.md` per PIPELINE.md Phase 1 and TEAM_CHARTER.md §3.
-**Inputs consulted:** `CLAUDE.md`, `docs/TEAM_CHARTER.md`, `docs/STATE.md`, `docs/PIPELINE.md`, `docs/DECISIONS.md`, `docs/GAME_SPEC.md`, `docs/research/SYNTHESIS.md` (primary), targeted reads of `docs/research/CONTRARIAN_SCOPE.md` §C-6 / §G-1.
-**Citations:** `SYN §X` → SYNTHESIS.md section; `SPEC §X` → GAME_SPEC.md section; `CON §X` → CONTRARIAN_SCOPE.md.
+**Inputs consulted (v1.0):** `CLAUDE.md`, `docs/TEAM_CHARTER.md`, `docs/STATE.md`, `docs/PIPELINE.md`, `docs/DECISIONS.md`, `docs/GAME_SPEC.md`, `docs/research/SYNTHESIS.md` (primary), targeted reads of `docs/research/CONTRARIAN_SCOPE.md` §C-6 / §G-1.
+**Inputs added for v1.1:** `docs/plan/CONTRARIAN_STRATEGY.md` (full).
+**Citations:** `SYN §X` → SYNTHESIS.md section; `SPEC §X` → GAME_SPEC.md section; `CON §X` → CONTRARIAN_SCOPE.md; `CON-STRAT §X` → CONTRARIAN_STRATEGY.md.
 
-**Target:** rank #1 on `bytefight.org/compete/cs3600_sp2026`, final ELO > Carrie's + 25-point safety margin, by 2026-04-19 23:59 (T-3.3 days from now).
+**Target:** rank #1 on `bytefight.org/compete/cs3600_sp2026`, final ELO > Carrie's + 25-point safety margin, by 2026-04-19 23:59.
+
+---
+
+## Section 0 — v1.1 Arbitration Register (contrarian response)
+
+Verdicts on every item flagged by `docs/plan/CONTRARIAN_STRATEGY.md`. Each row: **ID** → item name → **verdict** (ACCEPT / MODIFY / REJECT) → one-line reasoning → section where the integrated change lands. Items named by the team-lead's task brief are matched 1:1 below with the contrarian's MUST-CHANGE (J.1–J.7) and SHOULD-CHANGE (J.8–J.13) items.
+
+| # | Contrarian item | Verdict | Reasoning (short) | Integrated in |
+|---|-----------------|---------|-------------------|---------------|
+| 1 | **E-1** leaf-budget 100 μs vs depth-8 arithmetic | **ACCEPT-MODIFIED** | Contrarian arithmetic is correct: 100 μs × 10 k leaves/s doesn't reach d=8 in 6 s. Amend §2.a depth claim to "5–6 pure-Python, 7–8 with numba leaf"; add implied-nps to Appendix B; elevate numba flip-trigger (§7 row 6) urgency. Stretch: 50 μs → 20 k nps → d=7 possible pure-Python. | §2.a, §2.c, Appendix B, §7 |
+| 2 | **D-4 (D4 inversion)** `γ_info=0.3, γ_reset=0.5` inverted vs HEUR §H.3 | **ACCEPT** | Contrarian read HEUR §B.2 / §H.3 F15 — correct pairing is `γ_info=0.5, γ_reset=0.3`. v1.0 was a transcription error. | §2.d, Appendix B |
+| 3 | **F-1 (J.9)** CMA-ES wall-clock does not fit | **ACCEPT-MODIFIED** | Contrarian's arithmetic is persuasive: 100 trials × 50 paired matches × 30–60 s = 42–83 h sequential. v0.2 tuning default is now **Bayesian optimization (20–30 trials × 50 paired matches, parallelized n_workers=cpu_count−1)**, ≈ 6–10 h budget. CMA-ES remains an explicit v0.3+ stretch ONLY if BO finishes and we have ≥ 12 h of compute slack. Hand-tuned `w_init` is the ultimate fallback. | §2.c, §4 v0.2 row, §10 T-17/T-20, Appendix B |
+| 4 | **D-1 (J.10)** Drop `BeliefSummary.top8` | **ACCEPT** | Correct: `top8` is over- or under-wide depending on belief entropy; the leaf can sort 64 floats in ~5 μs if needed. Simpler API = less over-commitment. | §2.h, §3.8 |
+| 5 | **D-2 (J.4)** SEARCH-not-in-tree invariant assertion | **ACCEPT** | One-liner: after move-gen in `_alphabeta`, `assert all(m.move_type != MoveType.SEARCH for m in moves)`. Trivial cost; high catch value for silent footgun. | §2.f, §3.3 |
+| 6 | **E-3 (J.11)** Raise time safety 0.2 s → 0.5 s | **ACCEPT** | Matches `check_win` 0.5 s tie-vs-loss band (SPEC §7); GC + JIT pauses can exceed 200 ms. 4 s wall-clock "cost" per game is trivial vs eliminating TIMEOUT risk. | §2.e, Appendix B |
+| 7 | **G-3 (J.6)** HMM first-turn double-predict bug | **ACCEPT** | Contrarian arithmetic verified: at `turn_count == 0` for A, pipeline predicts twice when only one rat-move happened. Fix is a 2-line guard: skip step 1 if `turn_count < 2 and acting_is_a and never_updated_before`. Cleaner: pre-apply one predict in `__init__` and run partial pipeline on first call. | §2.h, §3.2 |
+| 8 | **C-1 (J.1)** Promotion gate 1 threshold: 60 %/100 is marginal | **ACCEPT-MODIFIED** | Adopt **"≥ 65 % over 100 paired matches OR ≥ 58 % over 200 paired matches, whichever is satisfied first"**. Allows fast-track if the bot is clearly dominant, requires more evidence if marginal. Matches CON §B-3 CI argument. | §6.1, D-006 supersede, Appendix B |
+| 9 | **C-3 (J.2)** T-LIVE-1 must include Albert | **ACCEPT** | Albert is the threshold we care about for primary promotion (FloorBot already covers George/floor). Amend to: `≥ 3 of 5 paired live vs George AND ≥ 1 non-loss out of 3 live vs Albert`. 3 extra live matches. | §5 T-LIVE-1, §6.1 |
+| 10 | **C-4 (J.3)** Concretize "auditor sign-off" | **ACCEPT** | Required-artifact: `docs/audit/AUDIT_V03.md` must exist and record: (a) T-HMM-1/2, T-SRCH-1/2/3, T-HEUR-1/2 all pass; (b) zero OPEN severity-Critical audit findings; (c) 0 TIMEOUT/INVALID_TURN in the 200-match crash gate; (d) emergency_fallback try/except verified in `agent.py`; (e) auditor's one-line "promotion approved" line. | §6.1, §10 T-18/T-new-V03-audit |
+| 11 | **I-3 (J.13)** Gate opp-exploit spawn on ≥ 10 live scrimmage matches existing | **ACCEPT** | Opponent-specific modeling without scrimmage evidence = building against a guess. Add precondition to §2.j / T-24: "BLOCKED until tester-live has logged ≥ 10 matches across {George, Albert, Carrie} in ELO_LEDGER.md. If precondition unmet at T-30h, dev-opponent-model is SUSPENDED and budget redirects to v0.4 polish." | §2.j, §10 T-24 |
+
+**Contrarian items accepted beyond the task brief's 11 (bonus integrations):**
+
+| # | Item | Verdict | Integrated in |
+|---|------|---------|---------------|
+| 12 | **A-D2 provisional-flip** (CON-STRAT §A D2, §B-1): mark belief-as-leaf-potential provisional, log per-match rat-capture counts | **ACCEPT** | §2.b marked **PROVISIONAL**; tester-local (T-17) must log rat-capture counts per match (enables SYN §F row 5 monitoring, contrarian J.7). | §2.b, §10 T-17 |
+| 13 | **I-2** v0.1 feature set: 5 → 7 (add F5, F7) | **ACCEPT** | HEUR §summary: F5 (cell_potential_sum) is THE 80→90 % lever. Shipping without it means v0.1 can't be Carrie-competitive; v0.2 weight-tuning would have to restart from scratch when features are added. Cost: +2 h dev-heuristic on v0.1. | §3.4, §4 v0.1 row |
+| 14 | **D-3 / G-2** TT miss-rate clarification (not wrong-value) + note TT excludes turn_count intentionally | **ACCEPT** | One-line clarifications; contrarian correct that tag handles wrong-value but wording was muddled. | §2.g, §9 R-TT-COLLISION-01 |
+| 15 | **A-B-2 §H schedule slack** scope-creep risk on v0.4/v0.5 schedule | **ACCEPT** | New §4 explicit fallback: "if v0.3 slips by ≥ 4 h, v0.4/v0.5 stretches cut in fixed order (endgame-tablebase → opp-exploit → F15 → F13' → numba)". | §4 |
+
+**REJECTIONS:** none. Every contrarian item is either accepted outright or accepted with explicit modification. No item disputed.
+
+**Items the architect notes for transparency (not changes, but worth flagging):**
+- Contrarian J.12 revised grade probabilities down by 1–3 pp across all three bands. Architect accepts the revision; grade table in §1 updated to match (P(≥ 70 %) = 0.91, P(≥ 80 %) = 0.55, P(≥ 90 %) = 0.25). These are now aligned with the CON §D baseline estimates.
+- Contrarian §H "scope-creep" warning (v0.4/v0.5 may not ship) is acknowledged; §4 fallback ordering above is the explicit response.
+
+**Upstream follow-ups recorded in DECISIONS.md as new entries (post-v1.1):** D-008 (v1.1 ratification), D-009 (BO replaces CMA-ES for v0.2), D-010 (promotion gate tightening + Albert inclusion + concrete auditor signoff), D-011 (HMM first-turn guard + SEARCH invariant + `top8` drop + time-safety 0.5 s + γ fix). [IDs bumped +1 from architect's original numbering to avoid collision with D-007 FloorBot-shipped entry.]
 
 ---
 
@@ -22,19 +60,19 @@
 - `search.py` — α-β + iterative deepening + TT + killer/history heuristics; root-only SEARCH branch.
 - `heuristic.py` — 9-feature linear leaf eval with Carrie-style cell-potential term (the 80→90% lever).
 - `move_gen.py` — wrapper over `board.get_valid_moves`, adds ordering, pre-filters illegal carpets.
-- `time_mgr.py` — adaptive iterative-deepening controller with 0.2 s safety + adaptive multipliers.
+- `time_mgr.py` — adaptive iterative-deepening controller with 0.5 s safety + adaptive multipliers.
 - `zobrist.py` — 64-bit hash keys over the 4 bitboards + two worker positions + parity + search-state.
 - `types.py` — shared dataclasses (TTEntry, BeliefSummary, SearchStats).
 
 **Honest grade-probability estimate under this plan (copy-updated from CON §D/§F-8 with small architect adjustments):**
 
-| Threshold | Estimate | 95 % CI (subjective) |
-|-----------|----------|----------------------|
-| ≥ 70 % (beat George's ELO floor) | 0.92 | 0.85–0.97 |
-| ≥ 80 % (beat Albert) | 0.58 | 0.40–0.75 |
-| ≥ 90 % (beat Carrie) | 0.28 | 0.15–0.45 |
+| Threshold | Estimate (v1.1) | 95 % CI (subjective) | vs v1.0 |
+|-----------|-----------------|----------------------|---------|
+| ≥ 70 % (beat George's ELO floor) | 0.91 | 0.85–0.97 | −0.01 |
+| ≥ 80 % (beat Albert) | 0.55 | 0.40–0.72 | −0.03 |
+| ≥ 90 % (beat Carrie) | 0.25 | 0.15–0.42 | −0.03 |
 
-Deltas vs CON: +0.02 at the 70 % band because FloorBot is being built in parallel (grade-floor insurance per D-I below), +0.03 at the 90 % band because the CMA-ES tuning harness and opponent-specific exploit track are committed here rather than optional. Confidence intervals are wide because paired-match evaluation has not yet been run on any version of the bot — these estimates will be revised after the v0.2 ELO gate (see §4 milestone table).
+v1.1 estimates align with the contrarian's post-critique numbers (CON-STRAT §K). The downward drift reflects: (a) CMA-ES demoted to stretch (less tuning leverage on heuristic weights), (b) small first-turn HMM bug was hiding (fixed now, but corrected expectation), (c) opponent-exploit track gated on scrimmage evidence rather than unconditional. These remain within v1.0's stated CIs. Confidence intervals are still wide because paired-match evaluation has not yet been run on any version of the bot — estimates will be revised after the v0.2 ELO gate.
 
 **Risk-weighted escalation:** if by T-36 h we are not at or above Albert on paired live scrimmage, open the opponent-specific exploit track (CON §C-6) unconditionally, and if by T-24 h we are not tracking Carrie, freeze generic heuristic work and burn the remaining budget on exploit + endgame tablebase.
 
@@ -58,7 +96,7 @@ For each of the 10 steps in SYN §G I commit a concrete decision. "Decision" is 
 
 **Why:**
 - `SYN §B1, SEARCH §B.3` rate α-β+ID+TT 5/5 for this game shape (branching b ≈ 6.3–6.8 excluding SEARCH, ≈ 70 including all 64 SEARCH locations).
-- 80-ply horizon is shallow; depth 6–8 pure Python is enough to matter (`SEARCH §H`, `SYN §A`).
+- 80-ply horizon is shallow; **projected median reachable depth under the 100 μs leaf budget is 5–6 ply pure-Python, 7–8 with numba leaf compile** (see Appendix B implied-nps note and §7 row 6 flip trigger). v1.0 over-stated this as "6–8 pure Python" by implicit reference to SEARCH §H's optimistic 33 μs/leaf assumption. v1.1 correction per CON-STRAT §E-1.
 - MCTS rejected: 50 k-nps pure-Python throughput (`SYN §A`) gives ~300 k simulations over 240 s split across 40 turns; UCT exploration on a 6-ply tree with b≈7 would under-sample late-game critical lines vs α-β+ID+TT (`SEARCH §B.5–B.8`).
 - PUCT without a trained prior adds engineering for no gain; our only prior source would be the F2 heuristic itself, which α-β already exploits via move ordering.
 
@@ -71,7 +109,9 @@ For each of the 10 steps in SYN §G I commit a concrete decision. "Decision" is 
 
 ### 2.b — Rat-as-chance-node vs belief-as-leaf-potential (SYN §G Step 1, D2)
 
-**Decision:** **Belief-as-leaf-potential (the F.1c hybrid).** The rat's position is **not** a chance node inside the tree. We track a single belief vector `b: np.ndarray (64,) float64` externally, evolve it before we enter the tree, and pass summary statistics (see §2.h / D22) into every leaf for evaluation. Inside the tree, the only chance node is the SEARCH outcome branch (§2.d).
+**Decision:** **Belief-as-leaf-potential (the F.1c hybrid). Marked PROVISIONAL per v1.1 contrarian amendment (CON-STRAT §B-1).** The rat's position is **not** a chance node inside the tree. We track a single belief vector `b: np.ndarray (64,) float64` externally, evolve it before we enter the tree, and pass summary statistics (see §2.h / D22) into every leaf for evaluation. Inside the tree, the only chance node is the SEARCH outcome branch (§2.d).
+
+**Why provisional:** the "symmetric cancels between max and min" argument (below) is approximate; the cell-type-mutation effect on opp's future sensor model is NOT symmetric (CON-STRAT §A D2). v1.1 adds an explicit monitoring hook: **tester-local's paired-match runner (T-17) MUST log per-match rat-capture counts for each side**, so we can detect "games with ≥ 2 rat captures show ≥ 5 pp worse win-rate" and fire SYN §F row 5's in-tree-opp-SEARCH flip.
 
 **How SEARCH moves interact with the tree:** SEARCH is **not a child in the tree's move generator** (B8, SEARCH §A.2). At the **root only**, we consider the root SEARCH option separately and compare `ValueOfRootSearch(loc*)` vs `BestNonSearchRootValue`, where:
 - `loc* = argmax_s b(s)` for the max-belief objective (or weighted objective — see §2.d).
@@ -86,14 +126,14 @@ For each of the 10 steps in SYN §G I commit a concrete decision. "Decision" is 
 
 **Provisional leaf-eval interface:**
 - Leaf gets: `board_state`, `belief_summary: BeliefSummary` (see `types.py` in §3).
-- `BeliefSummary` carries: `top8_cells: List[Tuple[Tuple[int,int], float]]`, `entropy: float`, `max_mass: float`, and a lazy-loaded full `belief: np.ndarray (64,)` for leaf features that need it.
+- `BeliefSummary` carries (v1.1 simplified): `belief: np.ndarray (64,)` (by reference, zero-copy), `entropy: float`, `max_mass: float`, `argmax: int`. **`top8` dropped per CON-STRAT §D-1 / J.10.**
 - Leaf does NOT re-run `predict(T)` per-ply. The belief passed in is the belief *as if no further rat motion happened*, which is fine because the **leaf-value comparison is monotone in belief shift**: all leaves in the tree see the same pre-tree belief, so relative values are preserved. Absolute values are optimistic by O(entropy_drift), which the search doesn't care about.
 
 **Flip trigger:** if in local ablation we see that opp-SEARCH threats matter (CON C6 / SYN §C7 — opponent captures rat > 40 % of games), re-introduce opponent's root SEARCH as an explicit chance node at min-nodes within depth ≤ 2 of root. This is a targeted patch, not a rewrite.
 
 ### 2.c — Heuristic family (SYN §G Step 4, D12, D13)
 
-**Decision:** **F2, the 9-feature handcrafted linear heuristic with CMA-ES weight tuning.** No NN (F3 rejected for v1 per SYN §B2, HEUR §F.1–F.4, CON §C-1).
+**Decision (v1.1 revised):** **F2, the 9-feature handcrafted linear heuristic, with Bayesian optimization as the default v0.2 weight-tuning method; CMA-ES demoted to v0.3+ stretch; hand-tuned `w_init` is the ultimate fallback.** No NN (F3 rejected for v1 per SYN §B2, HEUR §F.1–F.4, CON §C-1). v1.0 committed CMA-ES at v0.2; CON-STRAT §F-1 showed the wall-clock does not fit — see §4 v0.2 row for the revised tuning schedule.
 
 **Final feature list (names from HEUR §C; aliased to `heuristic.py` constants for clarity):**
 
@@ -131,8 +171,13 @@ Where `w[0..8]` are the 9 CMA-ES-tuned weights, bootstrapped from a hand-tuned i
 
 **Why linear and not NN:**
 - 3-day deadline is an anti-pattern for NN-from-scratch (PRIOR §F anti-pattern 3, SYN §B2).
-- ≤ 100 μs per eval in tournament mode (HEUR §H.2, SYN §B20) — a numpy vectorized 9-dot-product fits comfortably; a 3-layer MLP does not without careful compilation.
-- CMA-ES converges on 9 dims in ~300 evaluations (HEUR §G.1); each evaluation = 50 paired matches = 5 CPU-min at pure-Python speeds. Achievable in our budget.
+- ≤ 100 μs per eval in tournament mode (HEUR §H.2, SYN §B20) — a numpy vectorized 9-dot-product fits comfortably; a 3-layer MLP does not without careful compilation. **Stretch: ≤ 50 μs would raise nps to ~20 k and put depth 7 back on the pure-Python table** (HEUR §H.2 stretch, CON-STRAT §E-1).
+
+**Why Bayesian optimization (v1.1) over CMA-ES for v0.2 tuning:**
+- CMA-ES at HEUR §F.2's own numbers is ≈ 100 evaluations × 50 matches. Under `limit_resources=True` with tree-search at d=5–6, match length is 30–60 s (not the 5 s quoted), so total wall-clock is 42–83 h sequential. We have ~10 h to allocate in v0.2.
+- Bayesian optimization on 9 dims reaches a competitive optimum in 20–30 trials (literature consensus for smooth objectives). 25 trials × 50 paired matches × 30 s ≈ 10.5 CPU-h sequential → **6–10 h parallelized at `n_workers = cpu_count() − 1` on the user's local machine** (dev-integrator confirms hardware before T-20 begins).
+- BO has a stronger "stop early if no improvement" regime than CMA-ES, which is what we want given budget risk.
+- Hand-tuned `w_init` is the floor: if BO fails to beat `w_init` by ≥ +30 ELO on 50 paired matches, we ship `w_init` and bank the budget (SYN §F row 9).
 
 **Flip triggers:**
 - CMA-ES converges to within 10 % of `w_init` → ship F1 hand-tuned, bank time (SYN §F row 9).
@@ -152,7 +197,7 @@ V_SEARCH(loc) =
     − γ_reset · b(loc) · H(p_0)             # belief-reset cost, on hit-branch only
 ```
 
-With starting weights `γ_info = 0.3`, `γ_reset = 0.5`. `E[ΔH]` is the expected entropy reduction from the miss-branch update: `b' = renormalized(b * (cell ≠ loc))`; `H(p_0) ≈ 5.2 bits` (near-stationary, HMM §B.2).
+With starting weights **`γ_info = 0.5`, `γ_reset = 0.3`** (v1.1 correction per CON-STRAT §A-D4 / J.8; v1.0 inverted these against HEUR §B.2 / §H.3 F15). `E[ΔH]` is the expected entropy reduction from the miss-branch update: `b' = renormalized(b * (cell ≠ loc))`; `H(p_0) ≈ 5.2 bits` (near-stationary, HMM §B.2).
 
 **Search location choice:**
 - Default `loc* = argmax_s b(s)` (max-belief, HMM §C.3 option a).
@@ -169,16 +214,16 @@ With starting weights `γ_info = 0.3`, `γ_reset = 0.5`. `E[ΔH]` is the expecte
 
 ### 2.e — Time manager (SYN §G Step 3, D6)
 
-**Decision:** **Adaptive iterative deepening with 0.2 s safety margin and per-turn adaptive multipliers.**
+**Decision (v1.1 revised):** **Adaptive iterative deepening with 0.5 s safety margin and per-turn adaptive multipliers.**
 
 - **Base per-move budget:** `base_budget = time_left() / max(1, turns_left) − 0.05`. The `−0.05` is per-turn pessimism.
 - **Adaptive multiplier:** classify the position by three signals:
   - `easy` (multiplier 0.6×): only 1 non-SEARCH valid move; OR the top move dominates by ≥ 4 points immediate delta.
   - `normal` (multiplier 1.0×): default.
   - `critical` (multiplier 1.6×): turn_count ∈ [60, 78] (endgame); OR `rat_belief_max > 0.33` (a search is point-+EV, must be careful); OR my primed-line ≥ 5 is rollable this turn (huge swing); OR opponent primed-line ≥ 5 is rollable this turn (must block/race).
-- **Hard cap:** `min(2.5 × base_budget, time_left() − 0.2)`. 0.2 s is the safety margin for IPC jitter and final leaf (`extra_ret_time` is 5 s but that's IPC slack, not compute slack — SPEC §7).
+- **Hard cap:** `min(2.5 × base_budget, time_left() − 0.5)`. 0.5 s is the safety margin against Python GC pauses, IPC serialization, and any unforeseen JIT stalls — matches `check_win`'s 0.5 s tie-vs-loss band (SPEC §7). v1.1 raised from 0.2 s per CON-STRAT §E-3 / J.11. The 4 s wall-clock "cost" across 40 moves is worth eliminating TIMEOUT risk.
 - **Poll rate:** `time_left()` checked every 1024 node-expansions inside the ID loop (SEARCH §D.4). Also after each completed depth — if next depth's estimated cost (> 6× last depth's cost by branching-factor projection) exceeds remaining budget, exit early with the last-complete-depth result.
-- **Hard stop in ms before engine deadline:** 200 ms. The `check_win` code deducts `player_worker.time_left -= timer` on return and a 0.5 s band is the tie-vs-loss boundary (SPEC §7 `check_win`) — 200 ms gives us safety against Python GC pauses and IPC serialization.
+- **Hard stop in ms before engine deadline:** **500 ms** (v1.1, was 200 ms).
 - **Endgame override:** last 5 turns get at least `max(base_budget, 3.0 s)` regardless of easy/critical, because endgame mistakes are unrecoverable (R-TIE plus the point table is super-linear).
 - **Budget accounting:** `time_mgr` maintains a rolling estimate of "surplus so far = sum(base - actual) for t=0..turn-1" and reallocates surplus to later turns by raising their multipliers up to 2.5× cap.
 
@@ -200,6 +245,8 @@ Per-tier rationale:
 5. **Immediate-point-delta:** tiebreak by immediate score change (`move.move_type == CARPET: CARPET_POINTS_TABLE[k]; PRIME: +1; PLAIN: 0; SEARCH: filtered out at move-gen`).
 
 **SEARCH is NOT in this order** — it's handled at root only (§2.d). Do not include 64 SEARCH children in the in-tree move list.
+
+**Invariant assertion (v1.1 — CON-STRAT §D-2 / J.4):** In `search._alphabeta`, immediately after `move_gen.get_ordered_moves(...)` returns, the code MUST run `assert all(m.move_type != MoveType.SEARCH for m in ordered_moves)` (or equivalent). This is load-bearing — SPEC §2.4 / §10 item 20 establish that `apply_move(SEARCH)` is a silent no-op for points AND that belief side-effects are NOT on the Board; if SEARCH ever leaks into `_alphabeta`, the entire search result silently mis-values. Cost: one line, always-on in v0.1.
 
 **Flip trigger:** TT hit-rate < 5 % → drop hash-move tier and rely on killer+history (SYN §F row 7).
 
@@ -225,6 +272,11 @@ Total Zobrist table size ≈ 4·64 + 2·64 + 2 + 2·65 + 4 = 392 u64 values = 3.
 
 **TT size:** 2^20 = 1 048 576 buckets × 2 slots × (8 B hash + 4 B depth + 2 B best_move + 4 B value + 1 B flag) ≈ 40 MB. Well under the 1.5 GB RSS cap (SPEC §7).
 
+**v1.1 clarifications (CON-STRAT §D-3 / §G-2):**
+- The TT deliberately **excludes** `turn_count` from the key to maintain hit-rate. Leaves trade a small V-error (heuristic value slightly wrong when the same position repeats with different `turns_left`) for TT reuse across plies. In an 80-ply game, exact position repeats are rare and turn_count differs by at most ~4 in realistic loop patterns, so the V-error is bounded and acceptable.
+- The TT uses **absolute-frame keys** (includes `is_player_a_turn`), not "player-to-move in negamax frame" keys. A-to-move and B-to-move are stored under different keys even if the mask state is identical. Correct for a negamax search that reverses perspective between plies; flagged explicitly here for dev-search clarity.
+- R-TT-COLLISION-01's narrative is revised: the 44-bit tag eliminates wrong-value from bucket collisions; the remaining concern is **elevated miss-rate** (different positions landing in the same bucket), which the always-replace backup slot mitigates. T-SRCH-3 (≥ 15 % hit-rate gate) catches the degraded-case.
+
 **TTEntry fields:**
 - `hash: u64` (upper 44 bits stored, lower 20 are the index).
 - `depth: u8`.
@@ -238,9 +290,17 @@ Total Zobrist table size ≈ 4·64 + 2·64 + 2 + 2·65 + 4 = 392 u64 values = 3.
 
 **Decision:** **`float64 np.ndarray` of shape `(64,)` (NOT 8×8 — flat 1-D to allow direct `b @ T` multiplication).** Precompute `p_0 = (e_{(0,0)} @ T^1000)` in `__init__`.
 
-**Update order per turn (the canonical pipeline, HMM §E.3, SYN §B7/B17):**
+**Update order per turn (the canonical pipeline, HMM §E.3, SYN §B7/B17, with v1.1 first-turn fix per CON-STRAT §G-3 / J.6):**
 
-For every ply, execute exactly this sequence in `rat_belief.update(board, sensor_data)`:
+For every `play()` call, execute `rat_belief.update(board, sensor_data)`:
+
+**First-turn guard (v1.1 correction):** on the very first call for player A (`turn_count == 0` and `self._ever_updated is False`), the rat has moved exactly **once** beyond `p_0` (only our pre-sensor rat-move, no opp turn has happened). Running the full 4-step pipeline would double-predict. The fix is to **initialize `self.belief = self.p_0 @ self.T` in `__init__` and set `self._ever_updated = False`**, then on the first `update()` call skip steps 1–3 and run only step 4 (sensor-update). On all subsequent calls, run steps 1–4.
+
+For player B, the first call is `turn_count == 1`, by which time both rat-moves (pre-A's-sensor and pre-B's-sensor) have happened AND A's action is visible via `opponent_search`, so the full pipeline is correct from the first call (assuming B's `__init__` leaves `self.belief = p_0` and sets `self._ever_updated = False` to use the full pipeline once the first `update()` arrives).
+
+Cleanest implementation: let `__init__` set `self.belief = p_0` unconditionally, set `self._first_call = True`; on the first `update()`, check `board.is_player_a_turn` — if True AND `board.turn_count == 0`, skip the first `predict(T)` and opp-search-update (steps 1–2) and do a `predict(T)` + sensor-update only. Otherwise run the full 4-step pipeline. After the first call, `self._first_call = False` and all subsequent calls use the 4-step pipeline unconditionally.
+
+**The 4 steps (applied every ply after the first-turn guard):**
 
 1. **predict(T)** — `b = b @ T`.
 2. **opp-search-update** — if `board.opponent_search = (loc, result)`:
@@ -263,12 +323,13 @@ For every ply, execute exactly this sequence in `rat_belief.update(board, sensor
 
 **Float precision:** `float64`. HMM §F-1 allows float32 with per-turn renorm, but float64 removes one whole class of numerical-drift worry at negligible cost (64 cells, not 64 k). If later JAX/torch heuristic wants float32, we cast on the `BeliefSummary.belief` output.
 
-**Interface to search:** `BeliefSummary` dataclass (§3 `types.py`) with:
-- `belief: np.ndarray (64,) float64` — the full vector (cheap to pass by reference).
+**Interface to search (v1.1 simplified per CON-STRAT §D-1 / J.10):** `BeliefSummary` dataclass (§3 `types.py`) with:
+- `belief: np.ndarray (64,) float64` — the full vector (cheap to pass by reference, zero-copy).
 - `entropy: float` — `−Σ b·log(b+1e-12)` — cached, recomputed on every update.
 - `max_mass: float` — `b.max()`.
 - `argmax: int` — `b.argmax()`.
-- `top8: List[Tuple[int, float]]` — precomputed (sorted top-8 by mass).
+
+**Removed from v1.0:** `top8` field. Rationale: belief distribution is heavy-tailed near mid-game (concentrates in 3–5 cells) but re-diffuses after captures (20+ cells), so a fixed top-8 is over- or under-wide. Leaves that need "top-k by arbitrary weighting" can sort 64 floats in ~5 μs on demand. Simplifying the API now avoids over-commitment before the leaf's actual access pattern is known.
 
 The search code calls leaf eval with a reference to this summary — O(1) to read max_mass/entropy, O(64) amortized for full-belief feature computation. Leaf is expected to use the summary for F11/F12 and NOT touch the full `belief` unless F5/F7 want a belief-weighted variant (v0.2 extension).
 
@@ -293,8 +354,10 @@ This replaces the naive "closer-worker" heuristic for the first 6 plies; after t
 **Arbitration between SYN §C7 positions:**
 - HMM §D.4, SEARCH §F.3, HEUR §D.3 say Phase-5, nice-to-have — they are correct about **primary architecture** (the F2 linear heuristic already captures a lot of "don't let opp roll" via F4/F7/F10).
 - CON §C-6 says highest-leverage alternative, P(beats Carrie) ≈ 0.25–0.35 — this is correct about **grade-ceiling** (a generic bot *might* beat Carrie; an opponent-specific bot *should*).
-- The resolution: since generic v0.5 (pure generic against Carrie's heuristic) hits the 90 % threshold with P ≈ 0.28 (my estimate above), and opponent-specific adds ~5–10 pp on top, we can't afford to defer it entirely. But we also can't sabotage v0.1–v0.4 by diverting dev-search/dev-heuristic.
-- **Compromise:** spawn `dev-opponent-model` as a new role (see §10) with a well-defined interface — it produces a drop-in replacement for the `min_node_estimator()` function in `search.py`, selected by a runtime flag `OPPONENT_MODEL ∈ {"self-play", "carrie_greedy", "george_greedy"}`. The primary search code doesn't care which is active.
+- The resolution: since generic v0.5 (pure generic against Carrie's heuristic) hits the 90 % threshold with P ≈ 0.25, and opponent-specific could add ~5–10 pp on top, we can't afford to defer it entirely. But we also can't sabotage v0.1–v0.4 by diverting dev-search/dev-heuristic.
+- **Compromise (v1.1 revised):** spawn `dev-opponent-model` as a new role (see §10) with a well-defined interface — it produces a drop-in replacement for the `min_node_estimator()` function in `search.py`, selected by a runtime flag `OPPONENT_MODEL ∈ {"self-play", "carrie_greedy", "george_greedy"}`. The primary search code doesn't care which is active.
+
+**v1.1 precondition (CON-STRAT §I-3 / J.13):** `dev-opponent-model` work (T-24) is **BLOCKED until `docs/tests/ELO_LEDGER.md` records ≥ 10 live paired matches across the set {George, Albert, Carrie}**. Rationale: modeling a specific opponent without actual behavioral data is guesswork — we're fabricating a model against a hypothesized heuristic. If the precondition is not met by T-30 h (i.e. tester-live hasn't gathered enough scrimmage data), `dev-opponent-model` is **SUSPENDED** and its budget redirects to v0.4 polish (F13', F15, numba leaf, endgame-tablebase). The precondition is falsifiable: tester-live publishes the count to ELO_LEDGER.md; orchestrator checks at T-30 h gate.
 
 **Flip triggers:**
 - Lose > 70 % live vs Carrie → open Carrie-specific exploit as critical path (SYN §F row 13).
@@ -354,15 +417,16 @@ RattleBot/
 
 - **Classes / functions:**
   - `class RatBelief:`
-    - `__init__(self, T: np.ndarray, board: Board)`: store T, precompute `p_0`, noise LUT, distance LUT, Manhattan LUT, init `self.belief = p_0.copy()`.
-    - `update(self, board: Board, sensor_data: Tuple[Noise, int]) -> BeliefSummary`.
+    - `__init__(self, T: np.ndarray, board: Board)`: store T, precompute `p_0`, noise LUT, distance LUT, Manhattan LUT, init `self.belief = p_0.copy()`, `self._first_call = True`.
+    - `update(self, board: Board, sensor_data: Tuple[Noise, int]) -> BeliefSummary`. **v1.1: implements the first-turn guard per §2.h.** On `self._first_call == True`, if `board.is_player_a_turn and board.turn_count == 0`, skip steps 1–2 (no opp-ply has happened yet); then always run steps 3–4 (one predict + sensor-update). After execution, set `self._first_call = False`. All subsequent calls run the full 4-step pipeline unconditionally.
     - `handle_post_capture_reset(self, captured_by_us: bool) -> None`: reset `self.belief = p_0.copy()`.
-    - `summary(self) -> BeliefSummary`: cheap getter.
+    - `summary(self) -> BeliefSummary`: cheap getter (v1.1: no `top8` field).
   - Module-level helpers: `_compute_p0(T, steps=1000) -> np.ndarray`, `_noise_likelihood_table() -> np.ndarray`, `_distance_likelihood_row(actual: int) -> np.ndarray`.
 - **Data structures:**
   - `self.belief: np.ndarray (64,) float64`.
   - `self.p_0: np.ndarray (64,) float64` — immutable reference snapshot.
   - `self.T: np.ndarray (64, 64) float64`.
+  - `self._first_call: bool` — guards the first-turn predict-count (v1.1).
   - `self.noise_lik: np.ndarray (3, 4) float64` — rows Noise, cols Cell.
   - `self.dist_lik: Dict[int, np.ndarray (64,)]` — actual_dist → per-cell conditional likelihood. Actually precomputed as `DIST_LIK: np.ndarray (15, 15)` covering actual 0..14 and reported 0..14 (SPEC §3.5).
 - **Time budget per `update`:** ≤ 2 ms (target 0.5 ms).
@@ -399,6 +463,7 @@ RattleBot/
     - TT probe: if hit and entry.depth ≥ depth, maybe return (with flag check).
     - If `depth == 0 or board.is_game_over()`: return `heuristic.V_leaf(board, belief_summary)`.
     - Generate moves via `move_gen.get_ordered_moves(board, is_max, tt_hit.best_move)`.
+    - **v1.1 invariant assertion (CON-STRAT §D-2):** `assert all(m.move_type != MoveType.SEARCH for m in ordered_moves)` — load-bearing; SEARCH must never leak into the in-tree move list because `apply_move(SEARCH)` and `forecast_move(SEARCH)` are silent no-ops for points/belief per SPEC §2.4. Always-on, not behind a debug flag.
     - For each move (make/unmake pattern — see below):
       - `child_board = board.forecast_move(move, check_ok=False)` — but this allocates; see make/unmake below.
       - `child_board.reverse_perspective()`; **manually update `opponent_search / player_search` via deque-equivalent** (SYN §B18, SPEC §5).
@@ -488,7 +553,7 @@ RattleBot/
 
 ### 3.8 `types.py` — shared dataclasses
 
-- `BeliefSummary`: `belief: np.ndarray (64,)`, `entropy: float`, `max_mass: float`, `argmax: int`, `top8: List[Tuple[int, float]]`. Immutable once computed per turn.
+- `BeliefSummary`: `belief: np.ndarray (64,)`, `entropy: float`, `max_mass: float`, `argmax: int`. Immutable once computed per turn. **v1.1: `top8` field removed** — leaves that need top-k-by-arbitrary-weight sort 64 floats on demand (~5 μs).
 - `TTEntry`: `hash: int`, `depth: int`, `best_move_packed: int`, `value: float`, `flag: int` (EXACT=0, LOWER=1, UPPER=2).
 - `Undo`: for future make/unmake — stores the diff to reverse an `apply_move` (mask bits changed, worker pos, points delta). v0.2+.
 - `MoveKey`: `Tuple[int, int, int]` = `(move_type, direction, roll_length_or_search_idx)` — used as history-heuristic dict key.
@@ -505,9 +570,9 @@ Module is dependency-light (stdlib `dataclasses` + numpy).
 
 | Milestone | Target ELO goal | Build hours | Modules touched | Tests | Expected ELO delta | ETA |
 |-----------|-----------------|-------------|-----------------|-------|---------------------|-----|
-| **v0.1 — Playable skeleton** | Beats Yolanda ≥ 90 % on 50 paired matches | 10 h | agent.py, rat_belief.py (full), search.py (fixed-depth, no TT), heuristic.py (5 features: F1+F3+F4+F11+F12), move_gen.py (engine passthrough), time_mgr.py (trivial 5 s flat), zobrist.py (scratch hash only), types.py | §5 tests T-HMM-1, T-SRCH-1, T-HEUR-1, T-INT-1 | baseline; ≥ 1400 vs Yolanda self-play. | T − 62 h |
-| **v0.2 — Beats Yolanda ≥ 95 %, beats George paired** | + 80–120 ELO over v0.1 | 14 h | search.py (TT + killer + history + ID), heuristic.py (add F5, F7, F9, F10), move_gen.py (ordered + deny-filter), time_mgr.py (adaptive multipliers), zobrist.py (incremental XOR). Begin CMA-ES tuning harness. | §5 tests T-SRCH-2/3, T-HEUR-2, T-TIME-1 | baseline vs Yolanda ≥ 95 %; vs George ≥ 55 % paired. | T − 48 h |
-| **v0.3 — Beats George ≥ 70 % paired, FloorBot-beater** | + 50–100 ELO over v0.2 | 10 h | CMA-ES-tuned weights installed; search make/unmake; heuristic F8 (entropy) added; time-mgr surplus rebalancing. Live upload as candidate submission. | §5 tests T-HEUR-3, T-TIME-2, T-LIVE-1 | Shifts primary to bytefight.org as candidate (FloorBot stays as fallback). Vs George ≥ 70 % paired; vs Albert ≥ 40 % live scrimmage. | T − 30 h |
+| **v0.1 — Playable skeleton** | Beats Yolanda ≥ 90 % on 50 paired matches | 12 h (v1.1: +2 h for F5/F7) | agent.py, rat_belief.py (full, with first-turn guard), search.py (fixed-depth, no TT), heuristic.py (**7 features: F1+F3+F4+F5+F7+F11+F12** — includes the Carrie-style cell-potential lever per CON-STRAT §I-2), move_gen.py (engine passthrough), time_mgr.py (trivial 5 s flat), zobrist.py (scratch hash only), types.py | §5 tests T-HMM-1/2, T-SRCH-1, T-HEUR-1, T-INT-1 | baseline; ≥ 1400 vs Yolanda self-play. | T − 60 h |
+| **v0.2 — Beats Yolanda ≥ 95 %, beats George paired** | + 80–120 ELO over v0.1 | 14 h dev + 6–10 h parallel BO tuning | search.py (TT + killer + history + ID), heuristic.py (**add F9, F10** — F5/F7 already in v0.1 per v1.1), move_gen.py (ordered + deny-filter), time_mgr.py (adaptive multipliers), zobrist.py (incremental XOR). **Bayesian optimization tuning harness (v1.1 replaces CMA-ES)** — 25 trials × 50 paired matches each, parallelized `n_workers = cpu_count() − 1`. | §5 tests T-SRCH-2/3, T-HEUR-2, T-TIME-1 | baseline vs Yolanda ≥ 95 %; vs George ≥ 55 % paired. | T − 48 h |
+| **v0.3 — Beats George ≥ 70 % paired, FloorBot-beater** | + 50–100 ELO over v0.2 | 10 h | BO-tuned weights installed (CMA-ES if compute slack exists); search make/unmake; heuristic F8 (entropy) added; time-mgr surplus rebalancing. Live upload as candidate submission. | §5 tests T-HEUR-3, T-TIME-2, T-LIVE-1 | Shifts primary to bytefight.org as candidate (FloorBot stays as fallback). Vs George ≥ 70 % paired; vs Albert ≥ 40 % live scrimmage. | T − 30 h |
 | **v0.4 — Beats Albert majority live** | + 40–80 ELO over v0.3 | 8 h | Heuristic F13' (opening-asymmetric), F15 (SEARCH-aware); possible numba leaf compilation; endgame-tablebase stub (last 5 turns exact). | §5 tests T-HEUR-4, T-SRCH-4, T-LIVE-2 | Vs Albert > 50 % live paired scrimmage. | T − 18 h |
 | **v0.5 — Beats Carrie, #1 on leaderboard** | + 20–60 ELO over v0.4 | 10 h | Opponent-specific exploit track (CON §C-6) — Carrie-greedy and George-greedy min-node models; select via runtime flag. Possible opening book (6 turns max). | §5 tests T-LIVE-3, T-OPP-1 | Vs Carrie > 50 % live; final submission activation at T − 6 h. | T − 6 h |
 
@@ -520,6 +585,16 @@ Module is dependency-light (stdlib `dataclasses` + numpy).
 - v0.5 spawn: dev-opponent-model (new role). Dev-integrator handles final-zip discipline (CON §E-7, SPEC §7).
 
 **Exit criterion for each milestone** = passing BOTH the test gate in §5 AND the ELO gate in the table above on paired-match `limit_resources=True` local runs. A failure at any gate blocks promotion to the next milestone but does NOT block the other modules' internal development (we keep FloorBot as the live submission).
+
+**v1.1 slip-fallback schedule (CON-STRAT §H):** if v0.3 slips by ≥ 4 h, v0.4 and v0.5 stretches are cut **in this fixed order** to preserve the critical-path 90 % candidate:
+
+1. **Cut first:** numba leaf compilation (behind flip trigger anyway; only helps if leaf profile > 40 % wall).
+2. **Cut next:** F15 SEARCH-aware heuristic term (nice-to-have; F11/F12 already gate SEARCH timing).
+3. **Cut next:** F13' opening-asymmetric center-control (spawns are near-center already per SYN §B19).
+4. **Cut next:** opponent-specific exploit track (requires scrimmage data per §2.j; cleanly suspensible).
+5. **Cut last:** endgame-tablebase stub (last-5-turn exact search — this is + 3–5 pp critical-path value; preserve if at all possible).
+
+Orchestrator triggers the cut sequence at the v0.3 ELO-gate review. Each cut is recorded in DECISIONS.md as a D-00X "v1.1 slip-fallback invoked" entry for auditability.
 
 ---
 
@@ -596,10 +671,11 @@ Each subsystem has a metric + threshold that defines "working". Failure to meet 
 - **Metric:** 20 runs of `python3 engine/run_local_agents.py RattleBot Yolanda` — zero crashes, zero timeouts, all runs produce valid game JSON with RattleBot as the winner in ≥ 18 / 20.
 - **Owner:** dev-integrator + tester-local.
 
-### T-LIVE-1 — First live scrimmage successful (v0.3 gate)
+### T-LIVE-1 — First live scrimmage successful (v0.3 gate, v1.1 expanded per CON-STRAT §C-3 / J.2)
 
-- **Metric:** v0.3 uploaded to bytefight.org via Chrome MCP; 5 live scrimmage matches vs George; no INVALID_TURN or TIMEOUT; win ≥ 3/5.
+- **Metric:** v0.3 uploaded to bytefight.org via Chrome MCP; **5 live scrimmage matches vs George AND 3 live scrimmage matches vs Albert**; zero INVALID_TURN / TIMEOUT / CODE_CRASH across all 8 matches; **win ≥ 3 of 5 vs George AND ≥ 1 non-loss (win or draw) of 3 vs Albert**.
 - **Owner:** tester-live.
+- **Why Albert added:** George is the 70 %-tier bot and FloorBot already handles the floor; the primary-bot promotion gate is meaningful only if we verify we're at least brushing the Albert bracket. Cost: 3 extra live matches (~ 15 min of tester-live time). See CON-STRAT §C-3 for the full rationale.
 
 ### T-LIVE-2 — Albert-level (v0.4 gate)
 
@@ -622,10 +698,19 @@ Each subsystem has a metric + threshold that defines "working". Failure to meet 
 
 **FloorBot (Task #9) is being built by `floor-bot-dev` in parallel.** Primary bot (this doc) is a separate codebase. Interaction rules:
 
-### 6.1 Activation policy on bytefight.org
+### 6.1 Activation policy on bytefight.org (v1.1 gate)
 
 - **T − 60 h (≈ v0.2 complete):** FloorBot is the **active live submission** on bytefight.org. Primary bot (RattleBot) is held as a local candidate only.
-- **T − 30 h (≈ v0.3 complete):** If RattleBot v0.3 wins ≥ 60 % paired local vs FloorBot over 100 matches under `limit_resources=True`, AND zero crashes/timeouts over 200 matches, AND has scrimmaged successfully on bytefight.org (T-LIVE-1), promote RattleBot to live submission. Otherwise FloorBot stays live, RattleBot development continues.
+- **T − 30 h (≈ v0.3 complete):** Promote RattleBot to live submission IFF **all four** of the following pass (v1.1 tightened per CON-STRAT §C / J.1, J.2, J.3):
+  1. **Paired local ELO gate:** RattleBot wins `≥ 65 % over 100 paired matches` OR `≥ 58 % over 200 paired matches` vs FloorBot under `limit_resources=True`, whichever gate is satisfied first. (Fast-track for clearly-dominant bots; tighter evidence for marginal ones. Matches CON §B-3 CI bound.)
+  2. **Crash-free gate:** zero INVALID_TURN, zero TIMEOUT, zero CODE_CRASH across ≥ 200 matches under `limit_resources=True`.
+  3. **Live scrimmage gate (T-LIVE-1):** RattleBot uploaded to bytefight.org; **≥ 3 wins out of 5 live matches vs George AND ≥ 1 non-loss out of 3 live matches vs Albert**; zero invalid/timeout/crash in any of the 8 live matches.
+  4. **Auditor sign-off (concrete — v1.1):** `docs/audit/AUDIT_V03.md` exists and records, with auditor signature line:
+     - T-HMM-1, T-HMM-2, T-SRCH-1, T-SRCH-2, T-SRCH-3, T-HEUR-1, T-HEUR-2 all **PASS**.
+     - Zero OPEN severity-**Critical** audit findings (High/Medium acceptable with tracker entries).
+     - Crash-gate (condition 2) confirmed: "0 TIMEOUT / INVALID_TURN / CODE_CRASH over 200 matches".
+     - FloorBot `emergency_fallback` try/except wiring verified by grep-audit of `agent.py` (the try/except wraps the full `play()` body and returns `emergency_fallback(board)` on any exception).
+     - Auditor one-line: `**Promotion approved by auditor <name> on <date>.**`
 - **T − 6 h final lockdown:** whichever bot has the higher verified live ELO against the reference set is the final submission. Tie-breaker: the more mature bot (fewer known bugs in the audit ledger).
 - **Promotion is one-directional by default** — once RattleBot is live we don't demote to FloorBot unless a catastrophic regression is detected (e.g., a TIMEOUT in > 1 of 20 scrimmage matches). Demotion must be explicitly approved by the orchestrator per TEAM_CHARTER.md §4.
 
@@ -652,10 +737,10 @@ Reproduced here so devs don't context-swap. These are the **pre-committed** trig
 | 3 | Local paired matches show 5 pp improvement but tournament scrimmage shows regression. | Trust local tuning | Re-run all tuning under `limit_resources=True`; drop any gain that doesn't survive. | CON §A-1 / E-1 |
 | 4 | `max_p > 1/3` happens < 3 times per average game. | Root-only SEARCH gate | Add VoI-based info-gathering search threshold lower than 1/3 mid-game. | HMM §C.2 / C.4; HEUR §E.2 |
 | 5 | Opponent captures rat > 40 % of games (belief-reset events frequent). | Passive belief tracking | Add opponent-belief predictor; prioritize denial-searches before their EV moves. | CON §C-6; HMM §D.4 |
-| 6 | Leaf-eval profile > 40 % of wall time with > 2× speedup achievable. | Pure Python/numpy leaf | Compile with numba; push depth +1–2 plies. | SEARCH §I-6 |
+| 6 | Leaf-eval profile > 40 % of wall time with > 2× speedup achievable. | Pure Python/numpy leaf | Compile with numba; push depth +1–2 plies. **v1.1 elevated priority:** the 100 μs leaf budget bounds pure-Python at d=5–6; numba compile is the natural path to d=7–8 and is on the critical path if v0.4 gate isn't met at d=6. | SEARCH §I-6; CON-STRAT §E-1 |
 | 7 | TT hit-rate < 5 % after 100 matches. | hash-move first in move order | Drop hash-move tier; promote killer/history. | SEARCH §I-4 |
 | 8 | Our carpet-denials by opp > 1/game average. | Implicit blocking via F4 | Add explicit opp-parking-risk term to F5/F16 heuristic. | CON §A-4; HEUR §D.1 |
-| 9 | F2 CMA-ES tuning converges to weights near F1 handcrafted (< 10 % drift). | CMA-ES tuned F2 | Ship F1; bank the tuning budget elsewhere. | HEUR §G.2 |
+| 9 | BO-tuned F2 converges to weights near F1 handcrafted (< 10 % drift) OR BO fails to beat `w_init` by ≥ +30 ELO on 50 paired matches. | BO-tuned F2 (v1.1 replaces CMA-ES as default) | Ship `w_init` hand-tuned; bank the tuning budget elsewhere. | HEUR §G.2; CON-STRAT §F-1 |
 | 10 | JAX JIT warmup measured > 2 s in init. | JIT as-needed | Force warmup in `__init__` with dummy call; or replace JAX with numpy if budget squeezed. | CON §E-2 |
 | 11 | Local 50-match batch tied but 200-match paired shows ≥ 5 pp. | 50-match go/no-go | Promote minimum-batch to 200 paired for finalist gates. | CON §B-3 |
 | 12 | Games with `bigloop.pkl` (slow-mix) show belief-entropy persistently > 5 bits into mid-game. | Uniform across matrices | Matrix-specific early-game SEARCH policy; burn early VoI more aggressively. | HMM §B.2 / §B.3 |
@@ -726,9 +811,13 @@ Merged from SYN §E plus architect-identified new risks (marked **NEW**). Severi
 | R-T-CACHE | Caching T-derived table off-disk breaks per-game noise. | All T-derived structures are computed in `__init__` only. Test asserts no module-level T-derived constant. | dev-hmm |
 | R-TIE | Draw is 0.5 ELO; heuristic should prefer guaranteed tie over 40/60 gamble near endgame. | v0.4 adds "endgame tiebreak" heuristic tweak — when we're ahead on points with 5 turns left, penalize variance. | dev-heuristic |
 | R-SPAWN-BLOCK | Spawn-on-BLOCKED latent bug. | `_safe_spawn_sanity` in §2.i + fallback. Doc-only note in GAME_SPEC. | dev-integrator |
-| **NEW R-CMA-HARNESS-01** | CMA-ES harness mis-measures fitness (wrong baseline, non-paired). | Harness spec'd in §4 v0.2 milestone; uses paired-match infrastructure from tester-local. Auditor reviews the harness config. | dev-heuristic, auditor |
-| **NEW R-TT-COLLISION-01** | Zobrist collision rate on 2^20 buckets may be nontrivial over 50 k-nps × 240 s. | Upper-44-bit hash stored per-entry to detect collisions; mismatched-hash probes are misses. Measured in T-SRCH-3. | dev-search |
+| **NEW R-CMA-HARNESS-01 (v1.1 demoted)** | CMA-ES harness wall-clock doesn't fit in v0.2 budget (42–83 h sequential per CON-STRAT §F-1). | CMA-ES demoted to v0.3+ stretch; v0.2 default is Bayesian optimization (T-20 revised). R-BO-HARNESS-01 supersedes for v0.2. | dev-heuristic, auditor |
+| **NEW R-BO-HARNESS-01 (v1.1)** | BO harness mis-measures fitness (wrong baseline, non-paired, or insufficient trials). | 25-trial × 50-paired-match config per §2.c; auditor reviews the harness before T-20 runs; fitness = paired-win-rate vs `w_init`. | dev-heuristic, auditor |
+| **NEW R-TT-COLLISION-01 (v1.1 clarified)** | Elevated TT miss-rate when different Zobrist hashes land in the same 2^20 bucket. Upper-44-bit tag eliminates wrong-value returns, but repeated bucket-collisions depress hit-rate. | Upper-44-bit tag + always-replace backup slot; T-SRCH-3 gate at ≥ 15 % hit-rate; fall back to drop-hash-move tier per SYN §F row 7 if < 5 %. | dev-search |
 | **NEW R-BELIEF-BUDGET** | `b @ T` with float64 numpy: if heuristic uses JAX the dtype mismatch causes silent transfers. | Force `np.asarray(T, dtype=np.float64)` in `__init__`. Heuristic stays numpy. | dev-hmm, dev-heuristic |
+| **NEW R-HMM-FIRST-TURN-01 (v1.1)** | HMM update pipeline double-predicts on player A's first call; ships ~1-step-offset belief for first few turns. | First-turn guard in `rat_belief.update` per §2.h / §3.2; T-HMM-1 extended to cover `turn_count == 0` case explicitly. | dev-hmm |
+| **NEW R-SEARCH-LEAK-01 (v1.1)** | SEARCH moves leak into `_alphabeta`'s in-tree move list via a future refactor; silent mis-valuation because `apply_move(SEARCH)` is a no-op. | Always-on invariant assertion in `search._alphabeta` per §2.f / §3.3; auditor verifies in T-18 / AUDIT_V01. | dev-search, auditor |
+| **NEW R-OPP-MODEL-PRECOND-01 (v1.1)** | dev-opponent-model spawn at T − 36 h builds against a guessed Carrie/Albert heuristic without live scrimmage data. | Precondition: ≥ 10 live scrimmage matches in ELO_LEDGER.md before T-24 starts. Suspend & redirect if unmet at T − 30 h (§2.j). | orchestrator, dev-opponent-model |
 
 ---
 
@@ -740,19 +829,20 @@ The orchestrator should spawn the following tasks. Each is one-line title + shor
 - **T-12 — dev-integrator: scaffold RattleBot package.** Create `3600-agents/RattleBot/{__init__.py, agent.py, types.py}` stubs per §3. Wire imports per CLAUDE.md §4. Ensure local smoke test `python3 engine/run_local_agents.py RattleBot Yolanda` runs without crash (even if RattleBot just returns a random PLAIN). Blocks T-13/T-14/T-15.
 - **T-13 — dev-hmm: implement `rat_belief.py` v0.1.** Per §3.2. Pass T-HMM-1 and T-HMM-2 tests. Uses `float64`. Commit only after auditor sign-off.
 - **T-14 — dev-search: implement `search.py` v0.1 + `zobrist.py` scratch hash + `move_gen.py` engine-passthrough.** Per §3.3, §3.5, §3.7. Fixed-depth α-β + ID, no TT yet. Passes T-SRCH-1.
-- **T-15 — dev-heuristic: implement `heuristic.py` v0.1 (5 features).** Per §3.4. Feature set F1+F3+F4+F11+F12 with `w_init`. Passes T-HEUR-1.
+- **T-15 — dev-heuristic: implement `heuristic.py` v0.1 (7 features; v1.1 expanded).** Per §3.4. Feature set **F1+F3+F4+F5+F7+F11+F12** with `w_init`. F5/F7 (Carrie-style cell-potential) are included in v0.1 per CON-STRAT §I-2 — they are the 80→90 % lever and cannot be deferred. Passes T-HEUR-1.
 - **T-16 — dev-integrator: complete `agent.py` and `time_mgr.py` v0.1.** Wire HMM → search → heuristic. Safety try/except with FloorBot fallback. Passes T-INT-1 gate.
-- **T-17 — tester-local: build paired-match batch runner.** Takes 2 agent names + N + seed; outputs per-match JSON + ELO + CI. Enforces `limit_resources=True`. This is the ELO-measurement backbone of all subsequent gates. Blocks T-18 onward.
-- **T-18 — auditor: v0.1 code review + benchmark.** Reviews T-12–T-16 output against this doc's §3 specs. Writes `docs/audit/AUDIT_V01.md`.
+- **T-17 — tester-local: build paired-match batch runner.** Takes 2 agent names + N + seed; outputs per-match JSON + ELO + CI. Enforces `limit_resources=True`. **v1.1 additions:** (a) parallelized via `multiprocessing.Pool` with `n_workers = cpu_count() − 1`; (b) logs **per-match rat-capture counts for each side** (enables SYN §F row 5 monitoring per CON-STRAT §B-1 / §G-1); (c) logs per-match `TIMEOUT` / `INVALID_TURN` / `CODE_CRASH` counters separately; (d) outputs paired-CI at 95 %. This is the ELO-measurement backbone of all subsequent gates. Blocks T-18 onward.
+- **T-18 — auditor: v0.1 code review + benchmark.** Reviews T-12–T-16 output against this doc's §3 specs. Writes `docs/audit/AUDIT_V01.md`. Specifically confirms: (a) `rat_belief._first_call` first-turn guard correctness; (b) `search._alphabeta` SEARCH-not-in-tree assertion present; (c) `agent.py` wraps `play()` in try/except → `emergency_fallback`.
 - **T-19 — dev-search: add TT + killer + history (v0.2 search).** Per §2.f, §2.g. Passes T-SRCH-2, T-SRCH-3.
-- **T-20 — dev-heuristic: add F5, F7, F9, F10 + CMA-ES harness.** Passes T-HEUR-2, T-HEUR-3.
+- **T-20 — dev-heuristic: add F9, F10 + BO tuning harness (v1.1 replaces CMA-ES).** Bayesian optimization with 25 trials × 50 paired matches, parallelized. If BO finds weights < +30 ELO over `w_init` at v0.2 gate, fall back to `w_init`. Passes T-HEUR-2, T-HEUR-3. (F5/F7 already in v0.1 per v1.1.)
 - **T-21 — tester-local: run v0.2 gate gauntlet.** 200 paired matches vs Yolanda, 200 paired vs George. Reports in `docs/tests/RESULTS_V02.md`.
 - **T-22 — floor-bot-dev → dev-integrator: hand off FloorBot `emergency_fallback` interface.** Exposes the pure function for RattleBot to embed per §6.2.
-- **T-23 — tester-live: v0.3 live upload + scrimmage.** Chrome MCP flow; 5 live matches vs George. Writes `docs/tests/ELO_LEDGER.md` first entry. Passes T-LIVE-1.
-- **T-24 — dev-opponent-model: begin Carrie-greedy min-node estimator.** Pre-work for v0.5. Self-contained; doesn't block v0.3/v0.4 ship.
-- **T-25 — dev-heuristic + dev-search: v0.4 improvements.** F13', F15, optional numba leaf, endgame-tablebase stub.
+- **T-23 — tester-live: v0.3 live upload + scrimmage.** Chrome MCP flow; **5 live matches vs George AND 3 live matches vs Albert** (v1.1 expanded per CON-STRAT §C-3). Writes `docs/tests/ELO_LEDGER.md` first entry. Passes T-LIVE-1.
+- **T-24 — dev-opponent-model: begin Carrie-greedy min-node estimator.** Pre-work for v0.5. Self-contained; doesn't block v0.3/v0.4 ship. **v1.1 precondition:** BLOCKED until `docs/tests/ELO_LEDGER.md` contains ≥ 10 live scrimmage matches across {George, Albert, Carrie}. Orchestrator checks at T − 30 h; if unmet, SUSPEND and redirect budget to T-25.
+- **T-24b (v1.1 new) — auditor: write `docs/audit/AUDIT_V03.md` against the promotion gate.** Auditor enumerates gate conditions 1–4 from §6.1 and marks each PASS/FAIL with evidence. One-line "Promotion approved by <name> on <date>" signs off. Blocks RattleBot live-promotion.
+- **T-25 — dev-heuristic + dev-search: v0.4 improvements.** F13', F15, optional numba leaf, endgame-tablebase stub. Cut order per §4 slip-fallback if v0.3 slipped.
 - **T-26 — tester-live: v0.5 live gate + opponent-exploit A/B.** Compares generic-v0.5 vs carrie-greedy-v0.5 under `OPPONENT_MODEL` flag. Passes T-LIVE-3 / T-OPP-1.
-- **T-27 — orchestrator: final submission lockdown at T − 6 h.** Confirms with user. Activates the winning bot on bytefight.org. Screenshots leaderboard.
+- **T-27 — orchestrator: final submission lockdown at T − 6 h.** Confirms with user (partner protocol per R-PARTNER-01). Activates the winning bot on bytefight.org. Screenshots leaderboard.
 
 **Parallelization notes:** T-12 is a hard blocker. T-13, T-14, T-15 can run concurrently. T-16 blocks on all three. T-18 runs concurrently with T-19 onwards. T-22 can happen any time after FloorBot ships but must complete before T-19 ends (dev-integrator needs the fallback interface for the promotion criterion). T-24 is a side-track with its own budget.
 
@@ -765,27 +855,27 @@ For traceability. Each of D1–D22 from SYN §D is resolved or deferred here:
 | SYN D# | Title | This doc's decision | Section |
 |--------|-------|----------------------|---------|
 | D1 | Backbone algorithm | α-β+ID+TT | §2.a |
-| D2 | Rat chance-node model | Belief-as-leaf-potential | §2.b |
+| D2 | Rat chance-node model | Belief-as-leaf-potential **(provisional — v1.1)** | §2.b |
 | D3 | SEARCH inclusion in tree | Root-only EV-gated | §2.d |
-| D4 | Search-cell objective | Hybrid max-belief / min-entropy (HEUR F15 formula) | §2.d |
-| D5 | Move ordering stack | hash → killer → history → type → delta | §2.f |
-| D6 | Time allocation | Adaptive multipliers + 0.2 s safety | §2.e |
-| D7 | Numba/Cython/JAX for leaf | Numpy first; profile; numba only if leaf > 40 % wall AND 2× speedup achievable | §2.c, §9 R-HEUR-BUDGET |
-| D8 | Opponent model (tree side) | Self-play default; Carrie-greedy via runtime flag v0.5 | §2.j |
+| D4 | Search-cell objective | Hybrid max-belief / min-entropy, `γ_info=0.5, γ_reset=0.3` (v1.1 corrected) | §2.d |
+| D5 | Move ordering stack | hash → killer → history → type → delta + SEARCH-not-in-tree assertion (v1.1) | §2.f |
+| D6 | Time allocation | Adaptive multipliers + **0.5 s safety (v1.1, was 0.2 s)** | §2.e |
+| D7 | Numba/Cython/JAX for leaf | Numpy first; profile; numba only if leaf > 40 % wall AND 2× speedup achievable. **v1.1: elevated priority — see §7 row 6** | §2.c, §9 R-HEUR-BUDGET |
+| D8 | Opponent model (tree side) | Self-play default; Carrie-greedy via runtime flag v0.5, gated on ≥ 10 live scrimmages (v1.1) | §2.j |
 | D9 | Depth ceiling | d=16 | §3.3 MAX_DEPTH=20 (safety) |
 | D10 | ISMCTS fallback | No | §8 |
 | D11 | Beam-search pruning | No | §8 |
-| D12 | Heuristic architecture | F2 9-feature linear + CMA-ES | §2.c |
-| D13 | Feature-set granularity | 9 features listed in §2.c; F8/F13'/F15 scheduled v0.2+ | §2.c |
+| D12 | Heuristic architecture | F2 9-feature linear + **Bayesian opt for v0.2 tuning (v1.1); CMA-ES demoted to v0.3+ stretch** | §2.c |
+| D13 | Feature-set granularity | **v0.1 ships 7 features (F1+F3+F4+F5+F7+F11+F12, v1.1); v0.2 adds F9/F10 for full 9; F8/F13'/F15 v0.2+** | §2.c, §3.4 |
 | D14 | Float precision (HMM) | float64 | §2.h |
-| D15 | Log-space vs linear HMM | Linear with renorm | §2.h |
+| D15 | Log-space vs linear HMM | Linear with renorm + **first-turn predict-count guard (v1.1)** | §2.h |
 | D16 | Reactive floor-bot insurance | YES, live from T − 60 h | §2.0, §6 |
-| D17 | Opponent-specific exploit track | Pre-scheduled T − 36 h; conditional promotion | §2.j |
+| D17 | Opponent-specific exploit track | Pre-scheduled T − 36 h; **v1.1: BLOCKED on ≥ 10 live scrimmage matches; suspended if unmet at T − 30 h** | §2.j |
 | D18 | Opening book | Defer; v0.5 spare-time only | §8 |
 | D19 | Endgame tablebase | v0.5 last-5-turns stub | §4, §8 |
 | D20 | Matrix identification from T-samples | Skip | §8 |
-| D21 | Paired-match evaluation | Use it | §5, §9 |
-| D22 | HMM→search interface | Summary stats + lazy full-belief ref | §2.h, §3.8 |
+| D21 | Paired-match evaluation | Use it; **v1.1 promotion gate ≥ 65 %/100 OR ≥ 58 %/200** | §5, §9, §6.1 |
+| D22 | HMM→search interface | Summary stats (v1.1: `belief + entropy + max_mass + argmax`, `top8` dropped) + full-belief reference | §2.h, §3.8 |
 
 ---
 
@@ -796,18 +886,43 @@ The following are load-bearing numeric commitments. If any of these changes, thi
 - Agent folder name: `RattleBot`.
 - Zobrist table size: 2^20 × 2-slot TT.
 - TT entry: 19 B packed (8 hash + 1 depth + 2 move + 4 val + 1 flag + 3 pad).
-- Belief dtype: `float64`, shape `(64,)`.
-- `γ_info = 0.3`, `γ_reset = 0.5`, `ε_tiebreak = 0.25`.
-- Time safety: 0.2 s before engine cutoff. Per-turn pessimism: 0.05 s.
+- Belief dtype: `float64`, shape `(64,)`. `BeliefSummary` fields (v1.1): `belief + entropy + max_mass + argmax` (no `top8`).
+- **`γ_info = 0.5`, `γ_reset = 0.3`**, `ε_tiebreak = 0.25`. (v1.1: γ's corrected per HEUR §B.2 / §H.3 F15.)
+- **Time safety: 0.5 s** before engine cutoff (v1.1, was 0.2 s). Per-turn pessimism: 0.05 s.
 - Adaptive multipliers: 0.6× / 1.0× / 1.6×, cap 2.5×.
 - Node-expansion `time_left()` poll rate: every 1024 expansions.
-- Heuristic leaf budget: ≤ 100 μs tournament mode.
-- Feature count v0.1: 5 (F1, F3, F4, F11, F12). v0.2+: full 9.
+- Heuristic leaf budget: ≤ 100 μs tournament mode (stretch ≤ 50 μs).
+- **Implied nps at 100 μs/leaf: ~10 000 leaves/s → projected median reachable depth 5–6 ply pure-Python, 7–8 with numba leaf compile (§7 row 6).** (v1.1 added per CON-STRAT §E-1.)
+- **Feature count v0.1: 7 (F1, F3, F4, F5, F7, F11, F12)** — adds F5/F7 (Carrie-style cell-potential) over v1.0. v0.2+: full 9 (adds F9, F10).
 - `w_init = [1.0, 0.6, 0.6, 0.25, 0.25, 0.05, 0.4, 1.2, 1.0]`.
-- FloorBot promotion gate: RattleBot wins ≥ 60 % paired local vs FloorBot over 100 matches + 0 crashes/timeouts over 200 matches + live T-LIVE-1 pass.
+- **Weight-tuning default (v1.1):** Bayesian optimization (scikit-optimize) with 25 trials × 50 paired matches, parallelized `n_workers = cpu_count() − 1`. CMA-ES is a v0.3+ stretch ONLY if compute slack remains.
+- **FloorBot promotion gate (v1.1 tightened):** RattleBot wins `≥ 65 % over 100 paired matches` OR `≥ 58 % over 200 paired matches` vs FloorBot (whichever satisfied first) + 0 crashes/timeouts over 200 matches + T-LIVE-1 pass (5-match vs George at ≥ 3 wins AND 3-match vs Albert at ≥ 1 non-loss) + concrete AUDIT_V03.md sign-off.
 - Paired-match finalist gate: 200 matches.
-- Opp-exploit track spawn time: T − 36 h (unconditional).
+- **Opp-exploit track spawn time: T − 36 h, BUT blocked until ≥ 10 live scrimmage matches logged in ELO_LEDGER.md. Suspended and budget redirected to v0.4 if precondition unmet at T − 30 h** (v1.1 per CON-STRAT §I-3).
 
 ---
 
-**End of BOT_STRATEGY v1.0.**
+**End of BOT_STRATEGY v1.1.**
+
+**v1.1 changelog vs v1.0:**
+- §0 added: Arbitration register against 11 contrarian MUST/SHOULD items + 4 bonus integrations (CON-STRAT §J).
+- §1 grade table: downward-revised to align with CON-STRAT §K numbers.
+- §2.a depth claim: "6–8 pure Python" → "5–6 pure Python, 7–8 with numba" per CON-STRAT §E-1.
+- §2.b: D2 marked PROVISIONAL; rat-capture monitoring added.
+- §2.c: CMA-ES demoted; BO becomes v0.2 default.
+- §2.d: γ_info / γ_reset swapped to 0.5 / 0.3 per HEUR §H.3 F15.
+- §2.e: time safety 0.2 s → 0.5 s.
+- §2.f / §3.3: always-on SEARCH-not-in-tree invariant assertion.
+- §2.g: TT-excludes-turn_count explanation + absolute-frame key note + R-TT-COLLISION-01 clarified.
+- §2.h: first-turn double-predict bug fixed; `BeliefSummary.top8` removed.
+- §2.j: opp-model track gated on ≥ 10 scrimmage matches.
+- §3.2: `_first_call` guard on RatBelief.
+- §3.4 / §4 table / T-15: v0.1 feature count 5 → 7 (F5, F7 included).
+- §4: BO-replaces-CMA-ES in v0.2; slip-fallback cut order added.
+- §5 T-LIVE-1: expanded to include Albert scrimmages.
+- §6.1: promotion gate tightened (65 %/100 OR 58 %/200) + concrete AUDIT_V03.md.
+- §7 matrix: row 6 (numba) elevated priority; row 9 (CMA-ES → BO default).
+- §9: new risks R-BO-HARNESS-01, R-HMM-FIRST-TURN-01, R-SEARCH-LEAK-01, R-OPP-MODEL-PRECOND-01.
+- §10: T-17 parallelization + rat-capture logging; T-18 auditor invariant check; T-24 preconditions; T-24b AUDIT_V03.md task.
+- Appendix A / B: all numeric commitments updated; added implied-nps note.
+- New DECISIONS.md entries D-008 through D-011 (bumped +1 from architect's original D-007–D-010 to avoid collision with FloorBot-shipped D-007).
