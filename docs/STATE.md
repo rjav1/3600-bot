@@ -1,6 +1,6 @@
 # STATE — Rolling Snapshot
 
-**Last updated:** 2026-04-16 (strategy-architect finished BOT_STRATEGY.md v1.0)
+**Last updated:** 2026-04-16 (floor-bot-dev shipped FloorBot v1; strategy-architect finished BOT_STRATEGY.md v1.0)
 **Current phase:** Phase 1 — Strategy blueprint (BOT_STRATEGY.md v1.0 delivered; awaiting strategy-contrarian red-team before Phase 2/3)
 **Deadline:** 2026-04-19 23:59
 
@@ -34,6 +34,7 @@
 - **D-004** (2026-04-16): **Architecture committed: α-β + iterative deepening + Zobrist TT, with belief-as-leaf-potential (NOT in-tree rat chance nodes), and root-only EV-gated SEARCH.** Heuristic: F2 9-feature linear heuristic with Carrie-style cell-potential distance-discount, CMA-ES-tuned. Time manager: adaptive ID with 0.2 s safety + 0.6×/1.0×/1.6× multipliers + 2.5× cap. See BOT_STRATEGY.md §2 for the full walk of SYN §G. Alternatives explicitly dismissed (§2.a, §8): MCTS/PUCT/ISMCTS, beam search, null-move pruning, magic bitboards, NN-from-scratch. Contrarian dissent: pending from strategy-contrarian.
 - **D-005** (2026-04-16): **Module decomposition committed.** Package layout `3600-agents/RattleBot/{agent.py, rat_belief.py, search.py, heuristic.py, move_gen.py, time_mgr.py, zobrist.py, types.py}` per BOT_STRATEGY.md §3. Interface between HMM and search: a `BeliefSummary` dataclass with `(belief, entropy, max_mass, argmax, top8)`. Per-call budgets: HMM update ≤ 2 ms, leaf eval ≤ 100 μs tournament mode, TT = 2^20 × 2-slot. See §3 + Appendix B for the full commitments list.
 - **D-006** (2026-04-16): **FloorBot/primary relationship: FloorBot is the active live submission from T − 60 h. RattleBot is promoted to live only after passing a 4-condition gate (≥ 60 % paired vs FloorBot, ≥ 200 matches without crash/timeout, T-LIVE-1 pass, auditor sign-off). RattleBot embeds FloorBot's `emergency_fallback` as a try/except catch-all at every `play()` call.** Opponent-specific exploit (CON §C-6) pre-scheduled at T − 36 h as a parallel track, not a blocking path. See BOT_STRATEGY.md §6 and §2.j.
+- **D-007** (2026-04-16): **FloorBot v1 shipped at `3600-agents/FloorBot/`** per contrarian recommendation #3 and D-006 — 5-priority reactive policy (carpet ≥ 2 → extend/start prime → plain toward open area → any valid → random-fallback), ≤ 180 LOC, zero lookahead, entire `play` body wrapped in try/except. 50 local matches each side vs Yolanda: **100/100 wins, 0 crashes, 0 timeouts, 0 invalid moves**. Per-move wall-time p99 = 0.034 ms, max = 0.061 ms (3 orders of magnitude under the 50 ms target). Design philosophy, decision rules, weaknesses, and activation criteria live in `docs/plan/FLOOR_BOT.md`. This is our 70 %-tier insurance submission and the baseline gate for RattleBot promotion.
 
 ## Blockers
 
@@ -42,6 +43,7 @@ None pipeline-halting. Phase 2 is blocked pending strategy-contrarian red-team o
 ## Open loops
 
 - Agent folder `3600-agents/RattleBot/` not created yet (BOT_STRATEGY.md §3 commits the name; dev-integrator T-12 task scaffolds it).
+- FloorBot (`3600-agents/FloorBot/`) built per D-007. Ready to be activated on bytefight.org as the floor submission from T − 60 h per BOT_STRATEGY.md §6.
 - Test infrastructure: Tester-Local paired-match batch runner is pipeline task T-17 (blocks ELO-gate measurements).
 - bytefight.org credentials / session — Tester-Live needs to confirm the user is logged in on Chrome before uploads.
 - R-PARTNER-01 (BOT_STRATEGY.md §9): orchestrator must confirm partner-lock-in protocol with user (rahiljav@gmail.com) before first live upload.
