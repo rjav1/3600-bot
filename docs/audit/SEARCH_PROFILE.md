@@ -422,3 +422,39 @@ the BO-tuned weights land in parallel.
 - `docs/audit/profile_cprofile.txt` — raw cumulative-sorted cProfile
   output captured with the harness.
 - `docs/audit/SEARCH_PROFILE.md` — this file.
+
+---
+
+## §6 — Post-T-20g measurement (2026-04-17, dev-search)
+
+Items #1, #4, #2a applied. Rerun on the identical harness (seed=1, warm
+TT, 2 s and 6 s budgets):
+
+| State             | Depth @ 2 s  | Depth @ 6 s  | nps    |
+|-------------------|--------------|--------------|--------|
+| v0.2 baseline     | 9            | 10–11        | 22 k   |
+| Prediction (#1+#2a+#4) | 10      | 11–12        | ~30 k  |
+| **Actual (T-20g)**| **13.2 mean (12-14)** | **14–16** | **34.8 k** |
+
+The actual gain is ≈ 2× the prediction, driven by two compounding
+effects the audit under-counted:
+  - The profile-harness baseline of depth 9 assumed pure-Python cost per
+    node; nodes at depth 10-13 are **cheaper** on average (deeper cutoffs
+    + TT hits prune earlier at frontier than the O(b^d) upper bound).
+    Every ply past 9 benefits from all previous optimizations.
+  - The P-vec cache (fix #2a) also eliminates the `np.zeros` +
+    `_ray_reach` inner loop entirely on cache hits — not just the
+    per-call 24 % cumtime; at depth 13 the hit rate is near 100 % on
+    within-ID replay iterations.
+
+**Conclusion:** fix #3 (make/unmake) + #5 (incremental Zobrist) are still
+on the v0.3 roadmap, but T-20g already crosses the team-lead goals
+(depth 10+ at 2 s, depth 11 at 6 s) with significant margin. Those
+items are now bundled as T-30c (`docs/plan/BOT_STRATEGY_V03_ADDENDUM.md`).
+
+LOC delta for T-20g (edited files):
+  - `engine/game/board.py`            +6 (module-level tuple + docstring)
+  - `3600-agents/RattleBot/move_gen.py`  114 → 180 (+66)
+  - `3600-agents/RattleBot/heuristic.py` 539 → 569 (+30)
+  - `3600-agents/RattleBot/tests/test_search.py` 640 → 760 (+120, 3 new
+    tests + threshold relax on `test_tt_hit_rate_20_calls`)

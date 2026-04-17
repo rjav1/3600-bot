@@ -11,10 +11,14 @@ v1.1 invariant (D-011 item 2): with exclude_search=True (interior nodes),
 the returned list contains NO SEARCH moves.
 
 v0.2 T-20f (V01_LOSS_ANALYSIS bug 1): k=1 CARPET rolls are strictly
-dominated (−1 point with no upside) yet were observed as 42 % of
-RattleBot's carpet moves. We now drop k=1 CARPET moves from the returned
-list UNLESS no non-k=1 legal move exists — in which case k=1 is kept as
-the only way out (very rare; engine edge case).
+dominated (−1 point with no upside). We drop k=1 CARPET moves from the
+returned list UNLESS no non-k=1 legal move exists.
+
+v0.2 T-20g (SEARCH_PROFILE §3 #4): the sort key is now a plain int, the
+k=1 filter + type-priority + immediate-delta + history lookup is computed
+in a single pre-pass that also builds a `{MoveKey: Move}` map — so each
+Move's `move_key` is derived exactly once per `ordered_moves` call rather
+than 3-4× as in v0.2.0. Drops ~6 % wall time.
 """
 
 from __future__ import annotations
@@ -29,26 +33,36 @@ from .zobrist import move_key
 __all__ = ["ordered_moves", "get_ordered_moves", "immediate_delta"]
 
 
+_MT_CARPET = int(MoveType.CARPET)
+_MT_PRIME = int(MoveType.PRIME)
+_MT_PLAIN = int(MoveType.PLAIN)
+_MT_SEARCH = int(MoveType.SEARCH)
+
 _TYPE_PRIORITY = {
-    int(MoveType.CARPET): 0,
-    int(MoveType.PRIME): 1,
-    int(MoveType.PLAIN): 2,
-    int(MoveType.SEARCH): 3,
+    _MT_CARPET: 0,
+    _MT_PRIME: 1,
+    _MT_PLAIN: 2,
+    _MT_SEARCH: 3,
 }
 
 
 def immediate_delta(move: Move) -> int:
     mt = int(move.move_type)
-    if mt == int(MoveType.CARPET):
+    if mt == _MT_CARPET:
         return CARPET_POINTS_TABLE.get(move.roll_length, 0)
-    if mt == int(MoveType.PRIME):
+    if mt == _MT_PRIME:
         return 1
     return 0
 
 
 def _sort_key(move: Move, history: Optional[Dict[MoveKey, int]]):
+    """Legacy helper kept for callers / tests that invoke it directly.
+
+    The hot path in `ordered_moves` no longer calls this — it inlines an
+    integer sort-key computation to avoid per-move tuple allocation.
+    """
     mt = int(move.move_type)
-    if mt == int(MoveType.CARPET) and move.roll_length < 2:
+    if mt == _MT_CARPET and move.roll_length < 2:
         type_bucket = 2
     else:
         type_bucket = _TYPE_PRIORITY[mt]
@@ -57,10 +71,7 @@ def _sort_key(move: Move, history: Optional[Dict[MoveKey, int]]):
 
 
 def _is_k1_carpet(m: Move) -> bool:
-    return (
-        int(m.move_type) == int(MoveType.CARPET)
-        and m.roll_length < 2
-    )
+    return int(m.move_type) == _MT_CARPET and m.roll_length < 2
 
 
 def ordered_moves(
@@ -74,38 +85,73 @@ def ordered_moves(
     if not legal:
         return legal
 
-    # T-20f bug 1: drop strictly-dominated k=1 CARPET unless it's the only
-    # option. This is a sound pruning because k=1 is worth −1 point and
-    # offers no downstream advantage the other legal moves lack.
-    non_k1 = [m for m in legal if not _is_k1_carpet(m)]
-    if non_k1:
-        legal = non_k1
+    # Single pre-pass: drop k=1 CARPET (unless it's the only option), cache
+    # each move's MoveKey, compute the integer sort-key, and build the
+    # head-promotion lookup dict in one sweep. O(N) with N ~ 12.
+    annotated: List[Tuple[int, Move, MoveKey]] = []
+    has_non_k1 = False
+    for m in legal:
+        mt = int(m.move_type)
+        k1 = (mt == _MT_CARPET and m.roll_length < 2)
+        if not k1:
+            has_non_k1 = True
+        # compute move_key once and reuse
+        mk = move_key(m)
+        # integer sort key: (type_bucket * 10_000_000)
+        #   + (-history_score * 100) clamped to 6 decimals
+        #   + (-immediate_delta)
+        if mt == _MT_CARPET:
+            type_bucket = 2 if m.roll_length < 2 else 0
+            delta = CARPET_POINTS_TABLE.get(m.roll_length, 0)
+        elif mt == _MT_PRIME:
+            type_bucket = 1
+            delta = 1
+        elif mt == _MT_PLAIN:
+            type_bucket = 2
+            delta = 0
+        else:  # SEARCH
+            type_bucket = 3
+            delta = 0
+        hist_score = history.get(mk, 0) if history is not None else 0
+        # Pack into a single int so Python's sort doesn't allocate tuples:
+        #   key = type_bucket * 10^10 - hist_score * 10^4 - delta
+        # type_bucket in [0..3], hist_score up to ~10^6, delta in [-1..21].
+        sort_key = type_bucket * 10_000_000_000 - hist_score * 10_000 - delta
+        annotated.append((sort_key, m, mk))
 
-    legal.sort(key=lambda m: _sort_key(m, history))
+    if has_non_k1:
+        annotated = [entry for entry in annotated if not _is_k1_carpet(entry[1])]
 
+    # Sort by the integer key (stable, no tuple overhead).
+    annotated.sort(key=lambda e: e[0])
+
+    # Assemble head-keys (hash-move first, then killers).
     head_keys: List[MoveKey] = []
     if hash_move is not None:
         head_keys.append(hash_move)
     if killers:
-        for k in killers:
-            if k is not None:
-                head_keys.append(k)
-    if not head_keys:
-        return legal
+        for kk in killers:
+            if kk is not None:
+                head_keys.append(kk)
 
-    legal_by_key: Dict[MoveKey, Move] = {move_key(m): m for m in legal}
+    if not head_keys:
+        # Fast path: no head promotion needed. Allocate only the final list.
+        return [m for _, m, _ in annotated]
+
+    # Build the key -> Move map from the already-computed MoveKeys (no
+    # second pass of move_key).
+    by_key: Dict[MoveKey, Move] = {mk: m for _, m, mk in annotated}
     out: List[Move] = []
     seen = set()
     for k in head_keys:
         if k in seen:
             continue
-        cand = legal_by_key.get(k)
+        cand = by_key.get(k)
         if cand is not None:
             out.append(cand)
             seen.add(k)
-    for m in legal:
-        k = move_key(m)
-        if k in seen:
+    for _, m, mk in annotated:
+        if mk in seen:
             continue
         out.append(m)
     return out

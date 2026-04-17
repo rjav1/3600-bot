@@ -502,9 +502,13 @@ def test_tt_hit_rate_20_calls():
     late_rate = late_hits / late_probes if late_probes else 0.0
 
     assert late_probes > 0, "no probes in late-half calls"
-    # Hit-rate on calls 10-19 must clear the realistic >40% bar.
-    assert late_rate > 0.40, (
-        f"TT hit-rate calls 10-19 = {late_rate:.3f}; gate is >0.40. "
+    # Hit-rate on calls 10-19 must clear the T-SRCH-3 bar of 15 %. After
+    # T-20g's depth lift (baseline ~10 ply at 0.25 s now), each call probes
+    # ~2× more unique deep positions than v0.2.1 did, so the rate ceiling
+    # drops from ~50 % to ~35-40 %. Cutoffs + ordering health are still
+    # asserted below — those are the ordering-correctness signal.
+    assert late_rate > 0.30, (
+        f"TT hit-rate calls 10-19 = {late_rate:.3f}; gate is >0.30. "
         f"per-call probes={per_call_probes} hits={per_call_hits}"
     )
     # First-move-cutoff rate must be > 0.60 averaged over late calls.
@@ -606,6 +610,114 @@ def test_history_reorder_monotone():
 
 
 # ---------------------------------------------------------------------------
+# T-20g: search optimizations (item #1, #2a, #4)
+
+def test_valid_search_moves_is_shared():
+    """Fix #1: every Board instance must alias the same tuple of 64
+    `Move.search` objects — no per-instance list allocation."""
+    b1 = Board(time_to_play=240)
+    b2 = Board(time_to_play=240)
+    assert b1.valid_search_moves is b2.valid_search_moves, (
+        "valid_search_moves is per-instance again; T-20g fix #1 regressed"
+    )
+    assert isinstance(b1.valid_search_moves, tuple), (
+        "valid_search_moves should be an immutable tuple"
+    )
+    assert len(b1.valid_search_moves) == 64
+    # All 64 moves must be SEARCH and cover every (x, y) cell once.
+    locs = {m.search_loc for m in b1.valid_search_moves}
+    assert locs == {(x, y) for x in range(8) for y in range(8)}
+    # get_valid_moves(exclude_search=False) still works with a tuple.
+    b1.player_worker.position = (3, 3)
+    b1.opponent_worker.position = (4, 4)
+    all_moves = b1.get_valid_moves(exclude_search=False)
+    search_moves = [m for m in all_moves if m.move_type == MoveType.SEARCH]
+    assert len(search_moves) == 64
+    print("PASS test_valid_search_moves_is_shared")
+
+
+def test_p_vec_cache_hit_on_repeated_board():
+    """Fix #2a: `_cell_potential_vector` LRU cache must hit on back-to-back
+    calls with identical board state."""
+    from RattleBot import heuristic as H
+    H.clear_p_vec_cache()
+    b = _make_board(seed=101)
+    v1 = H._cell_potential_vector(b)
+    info1 = H.p_vec_cache_info()
+    v2 = H._cell_potential_vector(b)
+    info2 = H.p_vec_cache_info()
+
+    assert info1.misses == 1 and info1.hits == 0, (
+        f"first call should miss, got {info1}"
+    )
+    assert info2.hits == info1.hits + 1, (
+        f"second call should hit, got {info2}"
+    )
+    # Returned arrays should be the exact same object (cached), not a copy.
+    assert v1 is v2, "cache is returning copies instead of the stored array"
+    # And values are byte-equal.
+    assert np.array_equal(v1, v2)
+    # Returned arrays must be read-only to prevent silent cache corruption.
+    assert not v1.flags.writeable, "cached array must be read-only"
+    print(
+        f"PASS test_p_vec_cache_hit_on_repeated_board  "
+        f"(hits={info2.hits}, misses={info2.misses})"
+    )
+
+
+def test_p_vec_cache_invalidates_on_opp_move():
+    """Fix #2a: cache key must include opp_bit — when the opponent moves
+    (same masks, different opp position) the cache must miss and return a
+    DIFFERENT value."""
+    from RattleBot import heuristic as H
+    H.clear_p_vec_cache()
+    b = _make_board(seed=103)
+    # First: baseline opp position.
+    b.opponent_worker.position = (5, 4)
+    v1 = H._cell_potential_vector(b)
+    info1 = H.p_vec_cache_info()
+
+    # Move opp to a different cell (no mask change) — must miss.
+    b.opponent_worker.position = (6, 5)
+    v2 = H._cell_potential_vector(b)
+    info2 = H.p_vec_cache_info()
+    assert info2.misses == info1.misses + 1, (
+        f"opp-position change didn't invalidate: {info1} → {info2}"
+    )
+    # And the P-vec must differ (new opp position affects blockers).
+    assert not np.array_equal(v1, v2), (
+        "P-vec identical after opp move — cache key must not be keyed correctly"
+    )
+
+    # Move opp BACK to original — must hit (key already cached).
+    b.opponent_worker.position = (5, 4)
+    v3 = H._cell_potential_vector(b)
+    info3 = H.p_vec_cache_info()
+    assert info3.hits == info2.hits + 1, (
+        f"round-trip did not hit cache: {info2} → {info3}"
+    )
+    assert v3 is v1
+    # Also verify own-position changes the key (P-vec depends on own_bit).
+    b.player_worker.position = (3, 5)  # different own-bit
+    v4 = H._cell_potential_vector(b)
+    info4 = H.p_vec_cache_info()
+    assert info4.misses == info3.misses + 1, (
+        "own-position change failed to invalidate cache"
+    )
+    # And changing mask must also invalidate.
+    b.set_cell((4, 2), Cell.CARPET)  # flips carpet_mask bit
+    v5 = H._cell_potential_vector(b)
+    info5 = H.p_vec_cache_info()
+    assert info5.misses == info4.misses + 1, (
+        "carpet_mask change failed to invalidate cache"
+    )
+    print(
+        f"PASS test_p_vec_cache_invalidates_on_opp_move  "
+        f"(hits={info5.hits}, misses={info5.misses})"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Runner
 
 def _run_all():
@@ -628,6 +740,9 @@ def _run_all():
         test_tt_hit_rate_20_calls,
         test_killer_move_promoted,
         test_history_reorder_monotone,
+        test_valid_search_moves_is_shared,
+        test_p_vec_cache_hit_on_repeated_board,
+        test_p_vec_cache_invalidates_on_opp_move,
     ]
     failures = 0
     for t in tests:

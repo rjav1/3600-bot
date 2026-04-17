@@ -5,6 +5,16 @@ from .worker import Worker
 from .move import Move
 from .history import History
 
+# Module-level shared tuple of 64 Move.search instances. Precomputed once at
+# import time so every Board.__init__ (fired 60k+ times/turn during search
+# via get_copy) can alias the same read-only list rather than rebuilding
+# 64 new Move objects. Tuple prevents accidental mutation; extend() works
+# on it unchanged (SEARCH_PROFILE §3 #1, T-20g).
+_VALID_SEARCH_MOVES = tuple(
+    Move.search((x, y)) for x in range(BOARD_SIZE) for y in range(BOARD_SIZE)
+)
+
+
 class Board:
     """
     Board is the representation of the state of the match.
@@ -67,8 +77,9 @@ class Board:
         self.opponent_search = (None, False) # Last (Search Location, Search Result) for current opponent
         self.player_search = (None, False) # Last (Search Location, Search Result) for current player
 
-        # precompute valid search moves
-        self.valid_search_moves = [Move.search((x, y)) for x in range(BOARD_SIZE) for y in range(BOARD_SIZE)]
+        # Shared module-level 64-Move tuple — avoids 64 allocations per
+        # forecast_move / get_copy (T-20g fix #1, SEARCH_PROFILE §3).
+        self.valid_search_moves = _VALID_SEARCH_MOVES
 
     def is_valid_move(
         self, move: Move, enemy: bool = False

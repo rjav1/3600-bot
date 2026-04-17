@@ -1,11 +1,13 @@
-"""F2 linear leaf evaluator — v0.2.1 (12 features, multi-scale kernel).
+"""F2 linear leaf evaluator — v0.2.2 (12 features, multi-scale kernel).
 
 9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c
 expanded by 3 distance-kernel features (T-20c.1) per
 CARRIE_DECONSTRUCTION §5. v0.1 shipped 7 features; v0.2 added F8
 (opponent line threat) and F13 (belief COM distance); v0.2.1 adds the
 multi-scale-decay superset kernel F14/F15/F16 so BO can pick Carrie's
-actual decay shape without us knowing it.
+actual decay shape without us knowing it. v0.2.2 (T-20g) caches
+`_cell_potential_vector` on a 4-tuple mask key — 24 % eval wall saved
+on position-repeating boards.
 
 Features (all float64, sign-carried by W_INIT):
 
@@ -60,6 +62,7 @@ Owner: dev-heuristic.
 
 from __future__ import annotations
 
+import functools
 from typing import Optional
 
 import numpy as np
@@ -76,6 +79,8 @@ __all__ = [
     "N_FEATURES",
     "TERMINAL_SCALE",
     "Heuristic",
+    "clear_p_vec_cache",
+    "p_vec_cache_info",
 ]
 
 
@@ -286,54 +291,35 @@ def _cell_potential_for_worker(
     return best + _LAMBDA * second
 
 
-def _cell_potential_vector(
-    board: board_mod.Board,
+@functools.lru_cache(maxsize=4096)
+def _cell_potential_vector_cached(
+    blocked: int, carpet: int, opp_bit: int, own_bit: int
 ) -> np.ndarray:
-    """Build P(c) over all 64 cells for the multi-scale distance kernels
-    (F14/F15/F16). Returns shape (64,) float64.
+    """Pure-functional core of `_cell_potential_vector`, keyed on the four
+    integers that actually determine the output. Wrapped in an LRU cache
+    (4 096 entries ≈ 2 MB). Returned arrays are marked read-only so stray
+    callers don't silently corrupt a shared cached value.
 
-    For each cell c = (x, y):
-      P(c) = max over 4 directions of carpet-roll-value of the longest
-             reach through non-blocker cells from c.
-      Blockers = BLOCKED | CARPET | opp-worker-bit.
-      Cells where c itself is a blocker (BLOCKED/CARPET/opp-worker)
-      receive P=0 (we can't stand there, so cell has no potential).
+    Inputs:
+      blocked   — board._blocked_mask
+      carpet    — board._carpet_mask
+      opp_bit   — (1 << (opp_y * 8 + opp_x))
+      own_bit   — (1 << (own_y * 8 + own_x))
 
-    Runtime: ~64 cells × 4 rays = 256 ray scans per call. Each ray is
-    O(7). Total ~ 1.8 kops per evaluate().
+    Semantics are byte-identical to the pre-cache implementation.
     """
-    blocked = board._blocked_mask
-    carpet = board._carpet_mask
-    ox, oy = board.opponent_worker.position
-    opp_bit = 1 << (oy * BOARD_SIZE + ox)
-    own_bit = 1 << (
-        board.player_worker.position[1] * BOARD_SIZE
-        + board.player_worker.position[0]
-    )
-    # P(c) is "if I were standing at c, what's my best roll?" — so
-    # treat the opp worker as a blocker but NOT our own worker (since
-    # hypothetically we've moved to c). Our actual position isn't a
-    # blocker either because it might coincide with c.
     blockers_base = blocked | carpet | opp_bit
-
-    # "dead" cells = cells where c itself is unwalkable (BLOCKED, CARPET
-    # for this purpose — CARPET is walkable but you can't roll from
-    # there; SPACE/PRIMED are fine; we'll ignore PRIMED-at-c as fine
-    # since reach() walks away from c).
     dead_mask = (blocked | carpet) & ~own_bit
 
     out = np.zeros(_BOARD_CELLS, dtype=np.float64)
     for idx in range(_BOARD_CELLS):
         bit = 1 << idx
         if dead_mask & bit:
-            continue  # P=0 on BLOCKED/CARPET cells
-        if idx == (oy * BOARD_SIZE + ox):
-            continue  # opp stands here — we can't be here hypothetically
+            continue
+        if bit == opp_bit:
+            continue
         x = idx % BOARD_SIZE
         y = idx // BOARD_SIZE
-        # If c itself is PRIMED or BLOCKED mask already caught it;
-        # strip the `c` bit from the blockers set so c doesn't block
-        # its own rays (we're "standing" on c for this reach calc).
         blockers_c = blockers_base & ~bit
         best = 0.0
         for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
@@ -343,7 +329,39 @@ def _cell_potential_vector(
                 if v > best:
                     best = v
         out[idx] = best
+
+    out.setflags(write=False)
     return out
+
+
+def _cell_potential_vector(
+    board: board_mod.Board,
+) -> np.ndarray:
+    """Build P(c) over all 64 cells for the multi-scale distance kernels
+    (F14/F15/F16). Returns shape (64,) float64, read-only.
+
+    v0.2.2 (T-20g fix #2a): this function is a thin adapter over the
+    LRU-cached pure implementation. Cache key is
+    `(_blocked_mask, _carpet_mask, opp_bit, own_bit)` — exactly the
+    inputs that affect P(c). Cache holds up to 4 096 entries (~2 MB).
+    """
+    blocked = board._blocked_mask
+    carpet = board._carpet_mask
+    ox, oy = board.opponent_worker.position
+    wx, wy = board.player_worker.position
+    opp_bit = 1 << (oy * BOARD_SIZE + ox)
+    own_bit = 1 << (wy * BOARD_SIZE + wx)
+    return _cell_potential_vector_cached(blocked, carpet, opp_bit, own_bit)
+
+
+def clear_p_vec_cache() -> None:
+    """Reset the P-vec LRU cache. Useful between tests / fresh matches."""
+    _cell_potential_vector_cached.cache_clear()
+
+
+def p_vec_cache_info():
+    """Return the LRU CacheInfo (hits, misses, maxsize, currsize)."""
+    return _cell_potential_vector_cached.cache_info()
 
 
 def _reach_through_primed(
