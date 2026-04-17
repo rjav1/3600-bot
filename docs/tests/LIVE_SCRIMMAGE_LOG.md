@@ -58,3 +58,4 @@ _Auto-appended by `tools/bytefight_poll.py`. Each line = one status transition o
 - [2026-04-17 20:53:45Z] A_WIN    match=`b7e65887` vs `Team 15` (81513423) sub=`Rascal4.zip` opp_sub=`RattleBot_v03_pureonly_20260417_1022.zip` reason=matchmaking sched=2026-04-17T16:00 finished=2026-04-17T16:17
 - [2026-04-17 20:53:45Z] A_WIN    match=`b6dc4ec1` vs `Team 15` (81513423) sub=`RattleBot_v03_pureonly_20260417_1022.zip` opp_sub=`RattleBot_v03_pureonly_20260417_1022.zip` reason=scrimmage sched=2026-04-17T14:24 finished=2026-04-17T14:40
 - [2026-04-17 20:54:44Z] B_WIN    match=`49dbaf33` vs `Team 15` (81513423) sub=`rv13-1.zip` opp_sub=`RattleBot_v03_pureonly_20260417_1022.zip` reason=matchmaking sched=2026-04-17T20:00 finished=2026-04-17T20:54
+- [2026-04-17 21:06:53Z] VAL_OK   match=`4339d743` vs `Team 15` (81513423) sub=`SmokeBot.zip` opp_sub=`SmokeBot.zip` reason=validation sched=2026-04-17T21:06 finished=2026-04-17T21:06
