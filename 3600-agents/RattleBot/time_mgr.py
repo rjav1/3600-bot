@@ -20,6 +20,7 @@ Classification:
 
 from __future__ import annotations
 
+import math as _math
 from typing import Callable, List, Optional
 import time as _time
 
@@ -27,7 +28,13 @@ from game import board as board_mod
 
 from .types import BeliefSummary
 
-__all__ = ["TimeManager", "DEFAULT_PER_TURN_CEILING_S"]
+__all__ = [
+    "TimeManager",
+    "DEFAULT_PER_TURN_CEILING_S",
+    "CONTEXT_ENTROPY_COEF",
+    "CONTEXT_VARIANCE_COEF",
+    "CONTEXT_VARIANCE_HIGH_THRESHOLD",
+]
 
 
 SAFETY_S: float = 0.5
@@ -52,6 +59,30 @@ _MIN_BUDGET_S = 0.05
 # premise is gone and the ceiling is lifted.
 DEFAULT_PER_TURN_CEILING_S: float = 6.0
 
+# T-40c context-adaptive coefficients.
+#   multiplier = 1.0 + CONTEXT_ENTROPY_COEF · (entropy / ln 64)
+#                    + CONTEXT_VARIANCE_COEF · sign(variance - threshold)
+# High entropy (rat uncertain) → spend MORE time on positional search.
+# Low entropy (rat concentrated) → spend LESS time (SEARCH is the
+# obvious call). High root-move-value variance (measured by the agent
+# as the spread of PV scores across completed ID iterations) signals a
+# complex position → spend more. Both coefficients are intentionally
+# small because T-20e measured 97.9 % cutoff-on-first; we're trimming
+# the remaining ~2 % of wasted search.
+CONTEXT_ENTROPY_COEF: float = 0.3
+CONTEXT_VARIANCE_COEF: float = 0.2
+# Variance threshold above which we call the position "complex". Units
+# are heuristic leaf values (linear W·features, unitless); 0.5 is a
+# hand-picked floor that corresponds to roughly one carpet-point of
+# spread in leaf valuation across sibling root moves.
+CONTEXT_VARIANCE_HIGH_THRESHOLD: float = 0.5
+# Hard bounds on the total context multiplier so no pathological
+# entropy or variance estimate can push the budget outside
+# [0.5, 1.5] of the baseline.
+_CONTEXT_MULT_MIN: float = 0.5
+_CONTEXT_MULT_MAX: float = 1.5
+_LN_64: float = _math.log(64.0)
+
 
 class TimeManager:
     """Adaptive iterative-deepening time controller.
@@ -75,17 +106,75 @@ class TimeManager:
         self._turn_start: float = 0.0
         self._turn_budget: float = 0.0
 
+    def adjust_for_context(
+        self,
+        belief_summary: Optional[BeliefSummary],
+        prev_eval_variance: Optional[float] = None,
+    ) -> float:
+        """T-40c: compute the context-adaptive multiplier.
+
+        Formula:
+            mult = 1.0
+                 + CONTEXT_ENTROPY_COEF · (entropy / ln 64)
+                 + CONTEXT_VARIANCE_COEF · sign_high
+        where `sign_high` is +1 if `prev_eval_variance` exceeds
+        `CONTEXT_VARIANCE_HIGH_THRESHOLD`, -1 if it is strictly below
+        half that threshold (clearly-easy position), and 0 if
+        variance is None or in the mid-band.
+
+        The result is clamped to `[_CONTEXT_MULT_MIN, _CONTEXT_MULT_MAX]`
+        (default 0.5..1.5) so no pathological belief/variance value can
+        double or halve the budget beyond reason.
+
+        Returns: float multiplier, never <= 0.
+
+        Callable directly from `agent._play_internal` (the brief's
+        requirement) OR consumed internally by `start_turn` when the
+        caller passes `prev_eval_variance`. Callers that want the
+        pre-adjustment budget can use `start_turn(...)` without the
+        variance kwarg and then multiply externally.
+        """
+        ent = 0.0
+        if belief_summary is not None and belief_summary.entropy is not None:
+            ent = max(0.0, float(belief_summary.entropy))
+        # Entropy normalized to [0, 1] against the maximum ln 64 ≈ 4.159.
+        ent_frac = min(1.0, ent / _LN_64) if _LN_64 > 0 else 0.0
+        ent_term = CONTEXT_ENTROPY_COEF * ent_frac
+
+        var_term = 0.0
+        if prev_eval_variance is not None:
+            v = float(prev_eval_variance)
+            if v > CONTEXT_VARIANCE_HIGH_THRESHOLD:
+                var_term = CONTEXT_VARIANCE_COEF
+            elif v < 0.5 * CONTEXT_VARIANCE_HIGH_THRESHOLD:
+                var_term = -CONTEXT_VARIANCE_COEF
+
+        mult = 1.0 + ent_term + var_term
+        if mult < _CONTEXT_MULT_MIN:
+            mult = _CONTEXT_MULT_MIN
+        elif mult > _CONTEXT_MULT_MAX:
+            mult = _CONTEXT_MULT_MAX
+        return mult
+
     def start_turn(
         self,
         board: board_mod.Board,
         time_left_fn: Callable[[], float],
         belief_summary: Optional[BeliefSummary] = None,
+        prev_eval_variance: Optional[float] = None,
     ) -> float:
         """Compute this turn's budget; store start time; return seconds.
 
         The returned budget already has `safety_s` reserved — callers
         should pass `safety_s=0.0` into `search.iterative_deepen` to
         avoid double-subtracting.
+
+        T-40c: when `prev_eval_variance` is supplied (typically the
+        variance of root-move values from the previous ID iteration),
+        the budget is additionally scaled by
+        `adjust_for_context(belief_summary, prev_eval_variance)`. The
+        context multiplier composes with the endgame multiplier — it
+        does not override it.
         """
         try:
             time_left = float(time_left_fn())
@@ -115,6 +204,14 @@ class TimeManager:
         hard_cap = base * cap_mult
         if budget > hard_cap:
             budget = hard_cap
+        # T-40c: context-adaptive scale (entropy + eval variance). Applied
+        # AFTER the endgame cap so the two multipliers compose; the
+        # resulting budget is then re-clamped by the remaining
+        # ceiling/usable invariants below.
+        context_mult = self.adjust_for_context(
+            belief_summary, prev_eval_variance
+        )
+        budget *= context_mult
         # T-30e M-7: endgame uses a dedicated (higher) ceiling so the
         # T-30d lift actually delivers. Non-endgame still clamps at
         # `per_turn_ceiling_s` (default 6 s). In endgame we take the

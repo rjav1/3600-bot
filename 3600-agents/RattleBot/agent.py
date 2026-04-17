@@ -119,6 +119,14 @@ class PlayerAgent:
         # observing `board.player_search` at the top of each play().
         self._consec_search_misses: int = 0
         self._last_own_move_was_search: bool = False
+        # T-40c: rolling window of recent root-value estimates. The
+        # sample variance over this window feeds `time_mgr.start_turn`
+        # via its `prev_eval_variance` argument so we spend more time
+        # on positions whose PV value has been volatile and less on
+        # positions that have been calm. Window size 5 balances
+        # responsiveness with noise immunity.
+        self._root_value_history: list = []
+        self._ROOT_VALUE_WINDOW: int = 5
 
         try:
             if transition_matrix is None:
@@ -184,8 +192,14 @@ class PlayerAgent:
         self._update_consec_search_misses(board)
 
         belief_summary = self._belief.update(board, sensor_data)
+        # T-40c: variance of recent root-move values from the last few
+        # completed searches. None on the first turn (no history yet)
+        # so `adjust_for_context` will fall back to the entropy-only
+        # term. Computed locally — no search.py change required.
+        prev_var = self._prev_eval_variance()
         budget_s = self._time_mgr.start_turn(
-            board, time_left, belief_summary
+            board, time_left, belief_summary,
+            prev_eval_variance=prev_var,
         )
         # T-20f: three-condition SEARCH gate. All must hold.
         #   (a) max_mass > 1/3  — unconditional +4/-2 break-even
@@ -220,8 +234,33 @@ class PlayerAgent:
         self._last_own_move_was_search = (
             int(move.move_type) == int(MoveType.SEARCH)
         )
+        # T-40c: record root-value estimate for variance tracking next
+        # turn. Best-effort TT probe — any failure is silently ignored
+        # (variance just won't update, which is safe).
+        try:
+            root_key = self._zobrist.hash(board)
+            entry = self._search._probe_tt(root_key)
+            if entry is not None and entry.value is not None:
+                self._root_value_history.append(float(entry.value))
+                if len(self._root_value_history) > self._ROOT_VALUE_WINDOW:
+                    self._root_value_history.pop(0)
+        except Exception:
+            pass
         self._time_mgr.end_turn(0.0)
         return move
+
+    def _prev_eval_variance(self) -> Optional[float]:
+        """T-40c: sample variance of recent root-value estimates.
+
+        Returns None on < 2 samples (variance undefined). The variance
+        is fed into `TimeManager.start_turn(prev_eval_variance=...)`
+        which applies it through `adjust_for_context`.
+        """
+        hist = self._root_value_history
+        if len(hist) < 2:
+            return None
+        mean = sum(hist) / len(hist)
+        return sum((v - mean) ** 2 for v in hist) / len(hist)
 
     def _update_consec_search_misses(
         self, board: board_mod.Board
