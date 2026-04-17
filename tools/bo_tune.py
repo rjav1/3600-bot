@@ -121,6 +121,12 @@ BOUNDS: List[Tuple[float, float]] = [
     # opp could exploit); negative weight — bigger run = bigger threat.
     (+0.0, +1.5),   # F19 rat_catch_threat_radius
     (-1.5, +0.0),   # F20 opp_roll_imminence
+    # T-40-EXPLOIT-1 (v0.4.1) — F22 prime_steal_bonus. Sum of
+    # CARPET_POINTS_TABLE[k] over primed lines (k≥2, H/V) where our
+    # worker is strictly closer to the nearer endpoint than opp's.
+    # Positive — steal-able primed lines are good for us. Range
+    # typically 0-20 per OPPONENT_EXPLOITS §T-40-EXPLOIT-1.
+    (+0.0, +1.0),   # F22 prime_steal_bonus
 ]
 
 # Hard-tuned default (matches RattleBot.heuristic.W_INIT).
@@ -129,6 +135,7 @@ W_INIT: List[float] = [
     0.15, 0.10, 0.10,
     -0.4, 0.1,
     0.3, -0.6,
+    0.3,
 ]
 
 # Light L2 regulariser pulling toward `w_init`. See §2.5 "Objective".

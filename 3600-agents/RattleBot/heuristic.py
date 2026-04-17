@@ -1,4 +1,4 @@
-"""F2 linear leaf evaluator — v0.4.0 (16 features, + F19/F20).
+"""F2 linear leaf evaluator — v0.4.1 (17 features, + F22 prime-steal).
 
 9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c
 expanded by 3 distance-kernel features (T-20c.1) per
@@ -13,6 +13,12 @@ JIT-compiles the three hot functions (`_ray_reach`,
 module-level `_USE_NUMBA` kill-switch. v0.3.1 (T-30b) adds **F17**
 priming-lockout (count of dead/isolated primes within our reach)
 and **F18** opp-belief-proxy (post-opp-search belief entropy).
+v0.4.1 (T-40-EXPLOIT-1) adds **F22** prime_steal_bonus (sum over
+primed lines where our worker is closer to a line endpoint than the
+opponent, weighted by CARPET_POINTS_TABLE[k]; rewards positions where
+the engine's allow-any-player-to-carpet rule (SPEC §2.3) hands us
+free rolls of opp/shared primed lines — especially effective vs
+George / greedy opponents).
 v0.4.0 (T-40b) adds **F19** rat_catch_threat_radius (belief mass
 within Manhattan-2 of our worker) and **F20** opp_roll_imminence
 (longest primed-or-space run the opp could exploit in the near
@@ -88,6 +94,20 @@ Features (all float64, sign-carried by W_INIT):
                                   no existing primes. Neg weight — big
                                   F20 = opp has room to set up a long
                                   roll (T-40b).
+  F22 prime_steal_bonus         = Σ over H/V primed lines (k ≥ 2) of
+                                  CARPET_POINTS_TABLE[k] · I[our_worker
+                                  is strictly closer to nearer endpoint
+                                  than opp_worker]. Rewards positions
+                                  where we can roll opp/shared primed
+                                  lines before the opp does (SPEC §2.3
+                                  permits either player to roll any
+                                  PRIMED run). Positive weight. Per
+                                  OPPONENT_EXPLOITS §T-40-EXPLOIT-1.
+                                  Attribution-agnostic — since the
+                                  engine doesn't track who primed what,
+                                  we treat every line as a candidate
+                                  and rely on our-closer-than-opp to
+                                  pick real steal targets.
 
   P(c) = best-roll-value-if-worker-stood-at-c (ray scan through
          BLOCKED/CARPET/opp-worker blockers, Manhattan-extended using
@@ -96,7 +116,7 @@ Features (all float64, sign-carried by W_INIT):
 Public API (module-level):
 
     evaluate(board, belief_summary, weights=None) -> float
-    features(board, belief_summary) -> np.ndarray   # shape (16,) float64
+    features(board, belief_summary) -> np.ndarray   # shape (17,) float64
 
 A thin Heuristic class is kept for downstream consumers (search engine).
 
@@ -180,7 +200,7 @@ def is_numba_active() -> bool:
     return bool(_USE_NUMBA and _NUMBA_AVAILABLE)
 
 
-N_FEATURES: int = 16
+N_FEATURES: int = 17
 
 # Terminal eval = (player_points - opp_points) * TERMINAL_SCALE.
 # Chosen >> any realistic non-terminal eval so minimax always prefers
@@ -255,10 +275,29 @@ GAMMA_RESET: float = 0.3
 #                      rollable next turn"). Captures looming threats
 #                      where opp has an empty corridor to set up in.
 #                      Negative: big F20 = opp has space to threaten.
+#  16   F22    +0.3    Prime-steal bonus. Per T-40-EXPLOIT-1 /
+#                      OPPONENT_EXPLOITS.md §T-40-EXPLOIT-1: sum over
+#                      primed lines (k ≥ 2, H/V) of CARPET_POINTS_TABLE[k]
+#                      for lines where our worker is strictly closer to
+#                      the nearer endpoint than opp's worker. Engine
+#                      allows either player to CARPET any PRIMED line
+#                      (SPEC §2.3), so a close primed line adjacent to
+#                      us is a free steal opportunity. Especially
+#                      effective vs George / greedy opponents who don't
+#                      check steal-ability when priming. Positive.
+#                      Attribution approximation: we don't distinguish
+#                      lines we primed from lines opp primed — both
+#                      are steal-candidates if we're closer. This
+#                      overstates F22 for our own adjacent lines, but
+#                      since rolling our own lines is the intended
+#                      action anyway, the sign is still correct.
+#                      Falsification per OPPONENT_EXPLOITS §T-40-EXPLOIT-1:
+#                      if paired George scrimmage shows 0 actual
+#                      steals in 20 matches, drop from W_INIT.
 #
 W_INIT: np.ndarray = np.array(
     [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05, 0.15, 0.10, 0.10,
-     -0.4, 0.1, 0.3, -0.6],
+     -0.4, 0.1, 0.3, -0.6, 0.3],
     dtype=np.float64,
 )
 assert W_INIT.shape == (N_FEATURES,)
@@ -992,6 +1031,82 @@ def _opp_roll_imminence(board: board_mod.Board) -> int:
     return best
 
 
+def _prime_steal_bonus(board: board_mod.Board) -> float:
+    """F22 helper: sum of `CARPET_POINTS_TABLE[k]` over horizontal + vertical
+    primed lines of length k ≥ 2, restricted to those where our worker's
+    Manhattan distance to the nearer endpoint is strictly less than opp
+    worker's. Engine allows either player to CARPET any PRIMED line
+    (SPEC §2.3, `is_cell_carpetable`), so a reachable primed line is a
+    free steal opportunity — the feature rewards positioning to cash in.
+
+    Attribution approximation (flagged in W_INIT comment): we don't
+    know who primed which cell. All primed lines are candidates; if
+    we're closer we get credit. For lines we primed ourselves, this
+    still behaves correctly — rolling our own line is the intended
+    action, and the feature value matches the expected carpet reward.
+
+    Implementation:
+    - Scan each primed cell that starts a maximal H or V primed run
+      (previous cell in that direction is NOT primed).
+    - Walk forward to determine k.
+    - Only count lines with k ≥ 2 (k=1 = trap, not worth stealing).
+    - For each endpoint of the line, compute our and opp Manhattan
+      distance; use the NEAREST endpoint for the comparison.
+    - If our_dist < opp_dist, add `_CARPET_VALUE[k]` to total.
+
+    Per OPPONENT_EXPLOITS §T-40-EXPLOIT-1. Cost: O(64) over primed mask
+    with early-terminated walks. Typical mid-game ~2-5 primed cells =
+    2-5 iterations × 4 neighbor checks.
+    """
+    primed = board._primed_mask
+    if primed == 0:
+        return 0.0
+    wx, wy = board.player_worker.position
+    ox, oy = board.opponent_worker.position
+
+    total = 0.0
+    for dx, dy in ((1, 0), (0, 1)):  # E, S only — each line counted once
+        for idx in range(_BOARD_CELLS):
+            bit = 1 << idx
+            if not (primed & bit):
+                continue
+            # Is this cell a LINE-START in (dx, dy)? i.e., the preceding
+            # cell in (-dx, -dy) is NOT primed (or off-board).
+            x = idx % BOARD_SIZE
+            y = idx // BOARD_SIZE
+            px, py = x - dx, y - dy
+            if 0 <= px < BOARD_SIZE and 0 <= py < BOARD_SIZE:
+                prev_bit = 1 << (py * BOARD_SIZE + px)
+                if primed & prev_bit:
+                    continue  # not a line-start; some earlier iteration
+                              # will have processed this run
+            # Walk forward to count length k.
+            k = 1
+            nx, ny = x + dx, y + dy
+            while (
+                0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE
+                and (primed & (1 << (ny * BOARD_SIZE + nx)))
+            ):
+                k += 1
+                nx += dx
+                ny += dy
+            if k < 2:
+                continue  # k=1 not worth stealing
+            # Line endpoints: (x, y) is start; end = (x + (k-1)*dx, y + (k-1)*dy).
+            ex, ey = x + (k - 1) * dx, y + (k - 1) * dy
+            # Distance from each worker to each endpoint; use the
+            # *nearer* endpoint (maximizing steal-ability).
+            our_a = abs(wx - x) + abs(wy - y)
+            our_b = abs(wx - ex) + abs(wy - ey)
+            opp_a = abs(ox - x) + abs(oy - y)
+            opp_b = abs(ox - ex) + abs(oy - ey)
+            our_min = our_a if our_a < our_b else our_b
+            opp_min = opp_a if opp_a < opp_b else opp_b
+            if our_min < opp_min:
+                total += float(_CARPET_VALUE[k])
+    return total
+
+
 def _belief_com_distance(
     worker_xy, belief_summary: BeliefSummary
 ) -> float:
@@ -1128,7 +1243,7 @@ def _opp_belief_entropy(
 def features(
     board: board_mod.Board, belief_summary: BeliefSummary
 ) -> np.ndarray:
-    """Compute the 16-feature vector (float64) from the perspective of
+    """Compute the 17-feature vector (float64) from the perspective of
     `board.player_worker`. Fast path for leaf eval.
 
     No allocation beyond the returned array; all sub-calculations reuse
@@ -1192,6 +1307,12 @@ def features(
     # PRIMED-only); see `_opp_roll_imminence` docstring for the
     # spec-interpretation note.
     out[15] = float(_opp_roll_imminence(board))
+
+    # F22 — prime-steal bonus: sum over primed lines (k ≥ 2, H/V) of
+    # CARPET_POINTS_TABLE[k] for lines where our worker is strictly
+    # closer to the nearer endpoint than opp's worker. O(64) over the
+    # primed mask with early terminations.
+    out[16] = _prime_steal_bonus(board)
 
     return out
 

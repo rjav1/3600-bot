@@ -301,6 +301,13 @@ def test_symmetry():
     # F20 (longest primed-or-space run from opp worker) in [0, 7].
     assert 0.0 <= feats_fwd[15] <= 7.0
     assert 0.0 <= feats_rev[15] <= 7.0
+    # F22 (prime-steal bonus) is non-negative; bounded by sum of all
+    # CARPET_POINTS_TABLE[k] over all possible primed lines — pathological
+    # upper bound is 32 * 21 = 672 but realistic < 100. Loose bound.
+    assert feats_fwd[16] >= 0.0
+    assert feats_rev[16] >= 0.0
+    assert feats_fwd[16] <= 200.0
+    assert feats_rev[16] <= 200.0
 
 
 def test_per_call_timing():
@@ -828,6 +835,91 @@ def test_f20_carpet_blocks_run():
     assert _opp_roll_imminence(board) == 4
 
 
+def test_f22_steals_horizontal_line_when_we_closer():
+    """T-40-EXPLOIT-1 F22: primed H-line k=3, our worker closer to one
+    endpoint than opp → F22 = CARPET_POINTS_TABLE[3] = 4."""
+    from RattleBot.heuristic import _prime_steal_bonus
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(7, 7), blockers=False
+    )
+    for loc in [(3, 0), (4, 0), (5, 0)]:
+        board.set_cell(loc, Cell.PRIMED)
+    # Our (0,0) to (3,0) = 3; opp (7,7) to (3,0) = 4+7=11. Our closer.
+    assert _prime_steal_bonus(board) == 4.0
+
+
+def test_f22_does_not_steal_when_opp_closer():
+    """If opp's worker is closer to both endpoints, F22 = 0."""
+    from RattleBot.heuristic import _prime_steal_bonus
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(3, 1), blockers=False
+    )
+    for loc in [(3, 0), (4, 0), (5, 0)]:
+        board.set_cell(loc, Cell.PRIMED)
+    # Our (0,0) to (3,0) = 3; opp (3,1) to (3,0) = 1. Opp closer.
+    assert _prime_steal_bonus(board) == 0.0
+
+
+def test_f22_ignores_k1_lines():
+    """A single isolated prime (k=1) is NOT a steal target (−1 roll)."""
+    from RattleBot.heuristic import _prime_steal_bonus
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(7, 7), blockers=False
+    )
+    board.set_cell((3, 0), Cell.PRIMED)  # k=1, isolated
+    assert _prime_steal_bonus(board) == 0.0
+
+
+def test_f22_vertical_line():
+    """Vertical-axis primed lines are also counted."""
+    from RattleBot.heuristic import _prime_steal_bonus
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(7, 7), blockers=False
+    )
+    for loc in [(3, 2), (3, 3), (3, 4), (3, 5)]:  # k=4
+        board.set_cell(loc, Cell.PRIMED)
+    # Our (0,0) to (3,2) = 5; to (3,5) = 8. min = 5.
+    # Opp (7,7) to (3,2) = 9; to (3,5) = 6. min = 6.
+    # Our closer → CARPET_POINTS_TABLE[4] = 6.
+    assert _prime_steal_bonus(board) == 6.0
+
+
+def test_f22_counts_each_line_once():
+    """A 3-cell primed run in one direction should NOT be counted
+    multiple times (once per start-cell). The dedup via line-start
+    check ensures exactly one contribution."""
+    from RattleBot.heuristic import _prime_steal_bonus
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(7, 7), blockers=False
+    )
+    for loc in [(3, 0), (4, 0), (5, 0)]:
+        board.set_cell(loc, Cell.PRIMED)
+    # k=3 line. If incorrectly counted per-cell, F22 would be 12;
+    # correctly deduped, F22 = 4.
+    assert _prime_steal_bonus(board) == 4.0
+
+
+def test_f22_zero_when_no_primes():
+    from RattleBot.heuristic import _prime_steal_bonus
+    board = _fresh_board(player_pos=(3, 3), opp_pos=(5, 3), blockers=False)
+    assert _prime_steal_bonus(board) == 0.0
+
+
+def test_f22_feature_slot_wired_correctly():
+    """F22 must land in features[16] and match _prime_steal_bonus."""
+    from RattleBot.heuristic import _prime_steal_bonus
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(7, 7), blockers=False
+    )
+    for loc in [(3, 0), (4, 0), (5, 0)]:
+        board.set_cell(loc, Cell.PRIMED)
+    bs = _uniform_belief_summary()
+    feats = features(board, bs)
+    direct = _prime_steal_bonus(board)
+    assert feats[16] == direct
+    assert feats[16] == 4.0
+
+
 def test_class_wrapper_matches_module_fn():
     board = _fresh_board()
     bs = _uniform_belief_summary()
@@ -1219,6 +1311,13 @@ def _run_all():
         test_f20_longest_through_primed_or_space,
         test_f20_superset_of_f8,
         test_f20_carpet_blocks_run,
+        test_f22_steals_horizontal_line_when_we_closer,
+        test_f22_does_not_steal_when_opp_closer,
+        test_f22_ignores_k1_lines,
+        test_f22_vertical_line,
+        test_f22_counts_each_line_once,
+        test_f22_zero_when_no_primes,
+        test_f22_feature_slot_wired_correctly,
         test_class_wrapper_matches_module_fn,
         test_weight_shape_validation,
         test_numba_kernels_match_python_reference,
