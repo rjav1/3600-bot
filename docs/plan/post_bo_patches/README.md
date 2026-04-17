@@ -2,48 +2,45 @@
 
 Prepared: 2026-04-17 — while BO RUN1-v7 (PID 8868) still active.
 
-These four unified-diff files (`patch_01_*.patch` … `patch_04_*.patch`)
-are ready for `git apply` against a clean `main` tree AFTER the live
-BO run completes and its weights are adopted. They implement the
-post-BO fixes planned under tasks T-87, T-88, T-95, and T-96
-(plus Experiment C from the fresh-eyes architecture audit).
+These three unified-diff files (`patch_02_*.patch`, `patch_03_*.patch`,
+`patch_04_*.patch`) are ready for `git apply` against a clean `main`
+tree AFTER the live BO run completes and its weights are adopted.
+They implement the post-BO fixes planned under tasks T-87, T-90, T-95,
+and T-96 (plus Experiment C from the fresh-eyes architecture audit).
 
-All four patches have been verified with `git apply --check` against
-`HEAD` at prep time (commit `17441ec`) and with a full sequential
-`git apply` sim against a scratch repo; every target file still parses
-as valid Python after the full 1 → 2 → 3 → 4 sequence.
+**`patch_01` was dropped** after confirming the C-1 / R5 k=1 CARPET
+gate is already shipped in `move_gen.py` under a stricter semantics —
+see §5 audit note. Patch numbering is preserved (02/03/04) so other
+docs referencing those patch IDs remain valid.
+
+All three patches have been verified with `git apply --check` against
+`HEAD` at prep time and with a full sequential `git apply` sim against
+a scratch repo; every target file still parses as valid Python after
+the full 2 → 3 → 4 sequence.
 
 ---
 
-## §1 Apply order and rationale (1 → 2 → 3 → 4)
+## §1 Apply order and rationale (2 → 3 → 4)
 
 Apply in numeric order. The rationale is:
 
-1. **`patch_01_C1_k1_gate.patch`** — docstring-only note clarifying
-   that R5 (k=1 CARPET gate, LOSS_FORENSICS §4.R5) is strictly
-   subsumed by the existing `has_non_k1` filter. Zero behaviour
-   change; lands first to establish the "we examined R5, no-op"
-   record in the tree and avoid downstream patches re-raising the
-   question.
-
-2. **`patch_02_C2_early_search_lockout.patch`** — real behaviour
+1. **`patch_02_C2_early_search_lockout.patch`** — real behaviour
    change: adds a `turns_left > 30 AND max_mass <= 0.35` early-game
-   SEARCH lockout to the agent.py gate. Uncorrelated with patches 01
-   and 03, so order is flexible between these three, but applying
-   second keeps agent.py's history linear (patch 04 edits agent.py
-   too — see §3 fallback if order matters).
+   SEARCH lockout to the agent.py SEARCH gate. Low risk, small diff
+   (~20 LOC); apply first so the next SEARCH-heavy scrimmage gets
+   the C-2 benefit.
 
-3. **`patch_03_ExpC_R2_time_mgr_reskew.patch`** — Exp C phase
+2. **`patch_03_ExpC_R2_time_mgr_reskew.patch`** — Exp C phase
    multipliers (0.3× / 1.3× / 2.5× replacing 0.6× / 1.0× / 3.5×) +
    R2's 220 s cumulative ceiling guard + 2 new tests. This is the
    biggest change — a full rework of `start_turn`'s budget formula in
    time_mgr.py plus new tests in `tests/test_time_mgr.py`.
 
-4. **`patch_04_version_bump.patch`** — cosmetic docstring bump
+3. **`patch_04_version_bump.patch`** — cosmetic docstring bump
    ("RattleBot v0.2" → "RattleBot v0.4" in agent.py/move_gen.py/
    time_mgr.py/search.py, "v0.1" → "v0.4" in rat_belief.py).
    Applied last so the version label reflects the fully-patched v0.4
-   state. Each hunk targets lines that patches 01-03 do NOT touch
+   state. Each hunk targets lines that patches 02/03 do NOT touch
    (line 1 of each file plus agent.py line 157 inside `commentate()`)
    so order is reversible if needed.
 
@@ -131,7 +128,7 @@ If they're all one commit, the same `git reset --hard` still works.)
   updating to the new multiplier. Again, intended.
 
 If either breakage is surprising at apply time, revert patch 03 and
-re-plan — patches 01, 02, 04 are independent of it.
+re-plan — patches 02 and 04 are independent of it.
 
 ---
 
@@ -141,7 +138,7 @@ Per the source audit documents:
 
 | Patch | Source | Claimed impact |
 |-------|--------|----------------|
-| 01 (C-1) | COMPETITIVE_INTEL §5.C-1, LOSS_FORENSICS §4.R5 | +0 ELO (no-op; matches R5 via existing filter) |
+| 01 (C-1) | COMPETITIVE_INTEL §5.C-1, LOSS_FORENSICS §4.R5 | **DROPPED** — already shipped under stricter semantics (see §5) |
 | 02 (C-2) | COMPETITIVE_INTEL §5.C-2, LOSS_FORENSICS §4.R3 | +1.5 pts/match vs student agents that rat-spam early |
 | 03 (Exp C + R2) | ARCH_CONTRARIAN §4 Exp C + LOSS_FORENSICS §4.R2 | +10-25 ELO (Exp C) + eliminates Match-2 "241 s" failure mode (R2) |
 | 04 (version bump) | T-95 | 0 ELO (cosmetic) |
@@ -153,16 +150,70 @@ the paired-test smoke in §2.3 is the load-bearing verification step.
 
 ---
 
-## §5 File manifest
+## §5 C-1 / R5 audit — why `patch_01` was dropped
+
+Grep of `3600-agents/RattleBot/move_gen.py` at prep-time HEAD shows the
+k=1 CARPET gate is **already shipped** under the T-20f fix (v0.2,
+`URGENT T-20f`, task #39):
+
+```python
+# move_gen.py:73-74, 92-97, 122-123
+def _is_k1_carpet(m: Move) -> bool:
+    return int(m.move_type) == _MT_CARPET and m.roll_length < 2
+
+# ... inside ordered_moves() ...
+has_non_k1 = False
+for m in legal:
+    mt = int(m.move_type)
+    k1 = (mt == _MT_CARPET and m.roll_length < 2)
+    if not k1:
+        has_non_k1 = True
+# ...
+if has_non_k1:
+    annotated = [entry for entry in annotated
+                 if not _is_k1_carpet(entry[1])]
+```
+
+**Semantics comparison:**
+
+- **Shipped gate (T-20f):** drop k=1 iff *any non-k=1 legal move exists*.
+- **C-1 / R5 proposal:**       drop k=1 unless *all alternatives eval < −1*.
+
+The shipped gate is strictly ≥ C-1 in expected value:
+
+- When alternatives exist and at least one scores ≥ −1: both gates
+  drop k=1. Identical behaviour.
+- When alternatives exist but ALL score < −1: shipped gate still drops
+  k=1 (picks a non-k=1 move scoring < −1); C-1 would *permit* k=1
+  (also scoring −1). Neither move is better — shipped gate picks the
+  best available non-k=1, which is ≥ k=1's −1 only if the eval bound
+  is tight. In practice, this edge case is rare and a wash.
+- When no non-k=1 exists: both gates allow k=1 (forced).
+
+**Conclusion:** C-1 / R5 is already covered by T-20f. No patch
+produced. A prior prep draft proposed a docstring-only no-op patch;
+dropped after rattlebot-v2-fork's parallel R5 audit flagged that a
+docstring "C-1 note" is just noise. The T-20f comment block in
+`move_gen.py:13-21` already documents the gate.
+
+If a future team wants to literally implement C-1 ("allow k=1 when
+all alternatives eval < −1"), it would require an eval pass inside
+move-gen — adding cost to every node for an edge case that doesn't
+move ELO. Not recommended pre-deadline.
+
+---
+
+## §6 File manifest
 
 ```
 docs/plan/post_bo_patches/
 ├── README.md                                 (this file)
-├── patch_01_C1_k1_gate.patch                 (docstring only; 12-line diff)
 ├── patch_02_C2_early_search_lockout.patch    (agent.py; ~20-line diff)
 ├── patch_03_ExpC_R2_time_mgr_reskew.patch    (time_mgr.py + test_time_mgr.py; ~180-line diff)
 └── patch_04_version_bump.patch               (5 files, line-1 only; ~20-line diff)
 ```
+
+(`patch_01_C1_k1_gate.patch` dropped — see §5 audit.)
 
 Total LOC changed across all patches (excluding patch headers, per
 `git apply --stat`): roughly 200 insertions, 40 deletions, including
