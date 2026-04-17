@@ -1,4 +1,4 @@
-"""F2 linear leaf evaluator — v0.2.2 (12 features, multi-scale kernel).
+"""F2 linear leaf evaluator — v0.3 (12 features, multi-scale kernel + numba).
 
 9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c
 expanded by 3 distance-kernel features (T-20c.1) per
@@ -6,8 +6,11 @@ CARRIE_DECONSTRUCTION §5. v0.1 shipped 7 features; v0.2 added F8
 (opponent line threat) and F13 (belief COM distance); v0.2.1 adds the
 multi-scale-decay superset kernel F14/F15/F16 so BO can pick Carrie's
 actual decay shape without us knowing it. v0.2.2 (T-20g) caches
-`_cell_potential_vector` on a 4-tuple mask key — 24 % eval wall saved
-on position-repeating boards.
+`_cell_potential_vector` on a 4-tuple mask key. v0.3 (T-30c-numba)
+JIT-compiles the three hot functions (`_ray_reach`,
+`_cell_potential_for_worker`, `_cell_potential_vector`) using
+`@njit(cache=True)` with a pure-Python fallback behind the
+module-level `_USE_NUMBA` kill-switch.
 
 Features (all float64, sign-carried by W_INIT):
 
@@ -63,6 +66,7 @@ Owner: dev-heuristic.
 from __future__ import annotations
 
 import functools
+import os
 from typing import Optional
 
 import numpy as np
@@ -81,7 +85,41 @@ __all__ = [
     "Heuristic",
     "clear_p_vec_cache",
     "p_vec_cache_info",
+    "is_numba_active",
+    "warm_numba_kernels",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Numba kill-switch (T-30c-numba)
+#
+# `_USE_NUMBA = True`  → compile the 3 hot functions with @njit(cache=True)
+#                         and dispatch through the numba kernel. Falls back
+#                         to pure-Python if numba is unavailable/broken.
+# `_USE_NUMBA = False` → pure-Python path (byte-identical to v0.2.2).
+#
+# Can also be overridden at runtime via env var RATTLEBOT_NUMBA=0 (off) or
+# =1 (on) — used by tests that must assert parity with `_USE_NUMBA=False`.
+# ---------------------------------------------------------------------------
+
+_USE_NUMBA: bool = os.environ.get("RATTLEBOT_NUMBA", "1") != "0"
+
+try:
+    if _USE_NUMBA:
+        from numba import njit  # type: ignore
+        _NUMBA_AVAILABLE = True
+    else:  # pragma: no cover
+        njit = None  # type: ignore
+        _NUMBA_AVAILABLE = False
+except ImportError:  # pragma: no cover
+    njit = None  # type: ignore
+    _NUMBA_AVAILABLE = False
+    _USE_NUMBA = False
+
+
+def is_numba_active() -> bool:
+    """Return True iff the numba-compiled hot path is live."""
+    return bool(_USE_NUMBA and _NUMBA_AVAILABLE)
 
 
 N_FEATURES: int = 12
@@ -208,13 +246,13 @@ for _k, _v in CARPET_POINTS_TABLE.items():
 # ---------------------------------------------------------------------------
 
 
-def _ray_reach(mask_blockers: int, x: int, y: int, dx: int, dy: int) -> int:
-    """Return the maximum roll-length k (1..7) in direction (dx, dy) from
-    (x, y) such that all k cells stepped onto are *primeable or primed*
-    (i.e. not in mask_blockers). For the F5/F7 approximation this
-    treats SPACE and PRIMED identically as "eligible cells" and walls,
-    carpets, opponent-worker-cells, and own-worker-cell as blockers.
+def _ray_reach_py(mask_blockers: int, x: int, y: int, dx: int, dy: int) -> int:
+    """Pure-Python reference implementation of `_ray_reach`. Used when
+    `_USE_NUMBA=False` and as the parity oracle for tests.
 
+    Return the maximum roll-length k (1..7) in direction (dx, dy) from
+    (x, y) such that all k cells stepped onto are *primeable or primed*
+    (i.e. not in mask_blockers). Blockers = BLOCKED | CARPET | workers.
     Returns 0 if no legal step available. Capped at 7.
     """
     k = 0
@@ -231,43 +269,58 @@ def _ray_reach(mask_blockers: int, x: int, y: int, dx: int, dy: int) -> int:
     return k
 
 
-def _cell_potential_for_worker(
-    board: board_mod.Board,
+if _NUMBA_AVAILABLE and _USE_NUMBA:
+    @njit(cache=True)
+    def _ray_reach_nb(mask_blockers, x, y, dx, dy):
+        """Numba-compiled equivalent of `_ray_reach_py`.
+
+        Expects `mask_blockers` as np.uint64 (the bitmask); x, y, dx, dy
+        as plain int64. Uses np.uint64 for the `1 << idx` shift to stay
+        in uint64 arithmetic and avoid Python's arbitrary-precision int
+        boundary (numba requires fixed-width integers).
+        """
+        k = 0
+        nx = x + dx
+        ny = y + dy
+        while 0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE:
+            bit = np.uint64(1) << np.uint64(ny * BOARD_SIZE + nx)
+            if mask_blockers & bit:
+                break
+            k += 1
+            if k == 7:
+                break
+            nx += dx
+            ny += dy
+        return k
+
+
+def _ray_reach(mask_blockers: int, x: int, y: int, dx: int, dy: int) -> int:
+    """Dispatcher — calls the numba kernel if `_USE_NUMBA` is on, else the
+    pure-Python reference. Semantics identical.
+    """
+    if _USE_NUMBA and _NUMBA_AVAILABLE:
+        return int(_ray_reach_nb(np.uint64(mask_blockers), x, y, dx, dy))
+    return _ray_reach_py(mask_blockers, x, y, dx, dy)
+
+
+def _cell_potential_for_worker_py(
+    blockers: int,
     wx: int,
     wy: int,
     opp_x: int,
     opp_y: int,
+    lam: float,
+    beta: float,
+    carpet_value: np.ndarray,
 ) -> float:
-    """Compute the Carrie-style cell potential aggregated across the
-    4 cardinal directions from (wx, wy). Returns a scalar.
-
-    Formula (deviation from RESEARCH_HEURISTIC §B.2):
-      Instead of summing over every board cell, v0.1 uses the 4-ray
-      best-roll-from-worker-position approximation — equivalent to
-      assuming the worker stands at c. This matches what F9/F10
-      (longest_primable) were designed for and is cheap; the per-cell
-      sum formulation is deferred to v0.2 when we budget for it.
-
-      P = best_roll + lambda * second_best_roll
-          * (1 - beta * P_opp_first)
-          / (1 + alpha * dist_to_roll_origin)
-
-      dist_to_roll_origin == 0 here (worker IS the origin), so the
-      distance term collapses to 1. P_opp_first is approximated
-      directionally: if the opponent is strictly closer to the ray
-      endpoint, apply beta; tied => beta/2; we strictly closer => 0.
+    """Pure-Python core of `_cell_potential_for_worker`. Takes the already
+    assembled `blockers` mask (BLOCKED | CARPET | opp_bit) so the numba
+    sibling can share the same signature. Returns the Carrie cell
+    potential scalar as per `_cell_potential_for_worker`'s docstring.
     """
-    blockers = (
-        board._blocked_mask
-        | board._carpet_mask
-        # own-worker bit: worker is already standing, so don't block self
-        | (1 << (opp_y * BOARD_SIZE + opp_x))
-    )
-
     roll_values = []
     for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
-        k = _ray_reach(blockers, wx, wy, dx, dy)
-        # endpoint cell for opp-first calc
+        k = _ray_reach_py(blockers, wx, wy, dx, dy)
         ex, ey = wx + dx * max(k, 1), wy + dy * max(k, 1)
         our_dist = abs(wx - ex) + abs(wy - ey)
         opp_dist = abs(opp_x - ex) + abs(opp_y - ey)
@@ -277,36 +330,150 @@ def _cell_potential_for_worker(
             p_opp_first = 0.5
         else:
             p_opp_first = 0.0
-        # Roll value: for k>=2 use table; k<=1 contributes 0 (trap cell).
-        base = _CARPET_VALUE[k] if k >= 2 else 0.0
-        roll_values.append(base * (1.0 - _BETA * p_opp_first))
-
-    if not roll_values:
-        return 0.0
+        base = carpet_value[k] if k >= 2 else 0.0
+        roll_values.append(base * (1.0 - beta * p_opp_first))
     roll_values.sort(reverse=True)
     best = roll_values[0]
-    second = roll_values[1] if len(roll_values) > 1 else 0.0
-    # distance from worker to cell c is 0 in this approximation, so
-    # the (1 + alpha*dist) denominator is just 1.
-    return best + _LAMBDA * second
+    second = roll_values[1]
+    return best + lam * second
 
 
-@functools.lru_cache(maxsize=4096)
-def _cell_potential_vector_cached(
-    blocked: int, carpet: int, opp_bit: int, own_bit: int
+if _NUMBA_AVAILABLE and _USE_NUMBA:
+    @njit(cache=True)
+    def _cell_potential_for_worker_nb(
+        blockers, wx, wy, opp_x, opp_y, lam, beta, carpet_value
+    ):
+        """Numba-compiled equivalent. Takes the same args as
+        `_cell_potential_for_worker_py`; `blockers` must be np.uint64.
+
+        Implementation notes:
+          - The 4 cardinal directions are unrolled (numba can't handle
+            tuples-of-tuples on the hot path without boxing).
+          - Top-2 selection uses two `if` branches rather than building
+            a list + sorting — avoids list allocation inside njit.
+        """
+        best = -1.0
+        second = -1.0
+
+        # dir (0, -1)
+        k = _ray_reach_nb(blockers, wx, wy, 0, -1)
+        ex = wx
+        ey = wy - max(k, 1)
+        our_dist = abs(wx - ex) + abs(wy - ey)
+        opp_dist = abs(opp_x - ex) + abs(opp_y - ey)
+        if opp_dist < our_dist:
+            p_opp = 1.0
+        elif opp_dist == our_dist:
+            p_opp = 0.5
+        else:
+            p_opp = 0.0
+        base = carpet_value[k] if k >= 2 else 0.0
+        v = base * (1.0 - beta * p_opp)
+        if v > best:
+            second = best
+            best = v
+        elif v > second:
+            second = v
+
+        # dir (0, 1)
+        k = _ray_reach_nb(blockers, wx, wy, 0, 1)
+        ex = wx
+        ey = wy + max(k, 1)
+        our_dist = abs(wx - ex) + abs(wy - ey)
+        opp_dist = abs(opp_x - ex) + abs(opp_y - ey)
+        if opp_dist < our_dist:
+            p_opp = 1.0
+        elif opp_dist == our_dist:
+            p_opp = 0.5
+        else:
+            p_opp = 0.0
+        base = carpet_value[k] if k >= 2 else 0.0
+        v = base * (1.0 - beta * p_opp)
+        if v > best:
+            second = best
+            best = v
+        elif v > second:
+            second = v
+
+        # dir (-1, 0)
+        k = _ray_reach_nb(blockers, wx, wy, -1, 0)
+        ex = wx - max(k, 1)
+        ey = wy
+        our_dist = abs(wx - ex) + abs(wy - ey)
+        opp_dist = abs(opp_x - ex) + abs(opp_y - ey)
+        if opp_dist < our_dist:
+            p_opp = 1.0
+        elif opp_dist == our_dist:
+            p_opp = 0.5
+        else:
+            p_opp = 0.0
+        base = carpet_value[k] if k >= 2 else 0.0
+        v = base * (1.0 - beta * p_opp)
+        if v > best:
+            second = best
+            best = v
+        elif v > second:
+            second = v
+
+        # dir (1, 0)
+        k = _ray_reach_nb(blockers, wx, wy, 1, 0)
+        ex = wx + max(k, 1)
+        ey = wy
+        our_dist = abs(wx - ex) + abs(wy - ey)
+        opp_dist = abs(opp_x - ex) + abs(opp_y - ey)
+        if opp_dist < our_dist:
+            p_opp = 1.0
+        elif opp_dist == our_dist:
+            p_opp = 0.5
+        else:
+            p_opp = 0.0
+        base = carpet_value[k] if k >= 2 else 0.0
+        v = base * (1.0 - beta * p_opp)
+        if v > best:
+            second = best
+            best = v
+        elif v > second:
+            second = v
+
+        return best + lam * second
+
+
+def _cell_potential_for_worker(
+    board: board_mod.Board,
+    wx: int,
+    wy: int,
+    opp_x: int,
+    opp_y: int,
+) -> float:
+    """Public dispatcher — calls the numba kernel or Python reference
+    based on `_USE_NUMBA`. Same semantics as the pre-numba v0.2.2 API.
+
+    Assembles `blockers = _blocked_mask | _carpet_mask | opp_bit` from
+    the board, then hands off to the selected backend.
+    """
+    blockers = (
+        board._blocked_mask
+        | board._carpet_mask
+        | (1 << (opp_y * BOARD_SIZE + opp_x))
+    )
+    if _USE_NUMBA and _NUMBA_AVAILABLE:
+        return float(_cell_potential_for_worker_nb(
+            np.uint64(blockers), wx, wy, opp_x, opp_y,
+            _LAMBDA, _BETA, _CARPET_VALUE,
+        ))
+    return _cell_potential_for_worker_py(
+        blockers, wx, wy, opp_x, opp_y,
+        _LAMBDA, _BETA, _CARPET_VALUE,
+    )
+
+
+def _cell_potential_vector_py(
+    blocked: int, carpet: int, opp_bit: int, own_bit: int,
 ) -> np.ndarray:
-    """Pure-functional core of `_cell_potential_vector`, keyed on the four
-    integers that actually determine the output. Wrapped in an LRU cache
-    (4 096 entries ≈ 2 MB). Returned arrays are marked read-only so stray
-    callers don't silently corrupt a shared cached value.
-
-    Inputs:
-      blocked   — board._blocked_mask
-      carpet    — board._carpet_mask
-      opp_bit   — (1 << (opp_y * 8 + opp_x))
-      own_bit   — (1 << (own_y * 8 + own_x))
-
-    Semantics are byte-identical to the pre-cache implementation.
+    """Pure-Python core of `_cell_potential_vector`. Called directly when
+    `_USE_NUMBA=False`, and invoked by the numba dispatcher below. The
+    returned array is NOT marked read-only here — the caller wrapper does
+    that once, after picking a backend.
     """
     blockers_base = blocked | carpet | opp_bit
     dead_mask = (blocked | carpet) & ~own_bit
@@ -323,13 +490,88 @@ def _cell_potential_vector_cached(
         blockers_c = blockers_base & ~bit
         best = 0.0
         for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
-            k = _ray_reach(blockers_c, x, y, dx, dy)
+            k = _ray_reach_py(blockers_c, x, y, dx, dy)
             if k >= 2:
                 v = _CARPET_VALUE[k]
                 if v > best:
                     best = v
         out[idx] = best
+    return out
 
+
+if _NUMBA_AVAILABLE and _USE_NUMBA:
+    @njit(cache=True)
+    def _cell_potential_vector_nb(blocked, carpet, opp_bit, own_bit, carpet_value):
+        """Numba-compiled equivalent. Arg types: all 4 masks np.uint64,
+        `carpet_value` a float64 ndarray of length 8.
+
+        Implementation:
+          - All ints kept in uint64 to avoid numba boxing Python ints.
+          - Directions unrolled (numba doesn't handle tuple-of-tuples
+            cleanly in hot code).
+          - Writes into a fresh numpy array so the outer cache can
+            retain it across calls.
+        """
+        blockers_base = blocked | carpet | opp_bit
+        not_own = ~own_bit
+        dead_mask = (blocked | carpet) & not_own
+
+        out = np.zeros(64, dtype=np.float64)
+        for idx in range(64):
+            bit = np.uint64(1) << np.uint64(idx)
+            if dead_mask & bit:
+                continue
+            if bit == opp_bit:
+                continue
+            x = idx % 8
+            y = idx // 8
+            blockers_c = blockers_base & ~bit
+            best = 0.0
+
+            k = _ray_reach_nb(blockers_c, x, y, 0, -1)
+            if k >= 2:
+                v = carpet_value[k]
+                if v > best:
+                    best = v
+            k = _ray_reach_nb(blockers_c, x, y, 0, 1)
+            if k >= 2:
+                v = carpet_value[k]
+                if v > best:
+                    best = v
+            k = _ray_reach_nb(blockers_c, x, y, -1, 0)
+            if k >= 2:
+                v = carpet_value[k]
+                if v > best:
+                    best = v
+            k = _ray_reach_nb(blockers_c, x, y, 1, 0)
+            if k >= 2:
+                v = carpet_value[k]
+                if v > best:
+                    best = v
+
+            out[idx] = best
+        return out
+
+
+@functools.lru_cache(maxsize=4096)
+def _cell_potential_vector_cached(
+    blocked: int, carpet: int, opp_bit: int, own_bit: int
+) -> np.ndarray:
+    """LRU-cached adapter over the selected backend. Returned arrays are
+    read-only so the cache can safely hand out shared references.
+
+    Cache key: the 4 integers that fully determine P(c) under the
+    heuristic's blocker definition. See `_cell_potential_vector` for the
+    public wrapper that extracts them from a Board.
+    """
+    if _USE_NUMBA and _NUMBA_AVAILABLE:
+        out = _cell_potential_vector_nb(
+            np.uint64(blocked), np.uint64(carpet),
+            np.uint64(opp_bit), np.uint64(own_bit),
+            _CARPET_VALUE,
+        )
+    else:
+        out = _cell_potential_vector_py(blocked, carpet, opp_bit, own_bit)
     out.setflags(write=False)
     return out
 
@@ -537,6 +779,32 @@ def evaluate(
 # ---------------------------------------------------------------------------
 
 
+_NUMBA_WARMED: bool = False
+
+
+def warm_numba_kernels() -> None:
+    """Force AOT compile of the three numba kernels on a dummy input.
+
+    Safe to call even when `_USE_NUMBA=False` (it becomes a no-op). The
+    first `@njit(cache=True)` invocation takes ~1-2 s cold; subsequent
+    runs hit the disk cache (`__pycache__/*.nbi`) and warm in < 10 ms.
+
+    `Heuristic.__init__` invokes this once; calling it from agent
+    `__init__` at init time (before the tournament clock starts) keeps
+    first-turn latency low.
+    """
+    global _NUMBA_WARMED
+    if _NUMBA_WARMED or not (_USE_NUMBA and _NUMBA_AVAILABLE):
+        return
+    zero = np.uint64(0)
+    cp = _CARPET_VALUE
+    # Trigger jit compilation of each kernel with representative args.
+    _ray_reach_nb(zero, 0, 0, 1, 0)
+    _cell_potential_for_worker_nb(zero, 0, 0, 7, 7, _LAMBDA, _BETA, cp)
+    _cell_potential_vector_nb(zero, zero, np.uint64(1), np.uint64(2), cp)
+    _NUMBA_WARMED = True
+
+
 class Heuristic:
     """Linear combination of handcrafted features; weights tuned via BO."""
 
@@ -549,6 +817,9 @@ class Heuristic:
                 f"weights must be shape ({N_FEATURES},), got {w.shape}"
             )
         self._w: np.ndarray = w
+        # Warm jit on construction so the first `V_leaf` call doesn't
+        # absorb a 1-2s compile during a tournament turn.
+        warm_numba_kernels()
 
     @property
     def weights(self) -> np.ndarray:
