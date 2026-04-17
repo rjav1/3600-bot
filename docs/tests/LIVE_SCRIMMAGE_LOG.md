@@ -76,3 +76,6 @@ _Auto-appended by `tools/bytefight_poll.py`. Each line = one status transition o
 - [2026-04-17 22:32:48Z] RUNNING  match=`97afd501` vs `Albert` (5121a2d4) sub=`RattleBot_v03_pureonly_20260417_1022.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-17T22:22 finished=
 - [2026-04-17 22:38:53Z] A_WIN    match=`97afd501` vs `Albert` (5121a2d4) sub=`RattleBot_v03_pureonly_20260417_1022.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-17T22:22 finished=2026-04-17T22:38
 - [2026-04-17 22:40:00Z] A_WIN    match=`97afd501-6e07-48b1-9902-1c65d99a08cc` vs `Albert` sub=`RattleBot_v03_pureonly_20260417_1022.zip` result=WIN (scrimmage-albert)
+- [2026-04-17 22:40:54Z] queued   match=`d83a9b8b` vs `Carrie` (6d2a15ad) sub=`RattleBot_v03_pureonly_20260417_1022.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-17T22:40 finished=
+- [2026-04-17 22:53:02Z] RUNNING  match=`d83a9b8b` vs `Carrie` (6d2a15ad) sub=`RattleBot_v03_pureonly_20260417_1022.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-17T22:40 finished=
+- [2026-04-17 23:15:00Z] SUBMITTED match=`d83a9b8b-3983-4920-ae3a-6f70aab9021c` vs `Carrie` sub=`RattleBot_v03_pureonly_20260417_1022.zip` result=in_progress (scrimmage-carrie — cadence fire 3, symmetric resample; poll timed out at 15 min with match running, poller will auto-append final outcome)
