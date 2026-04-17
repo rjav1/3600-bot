@@ -1051,6 +1051,143 @@ def test_evaluate_returns_same_value_both_backends():
     # Cross-backend parity is covered by test_numba_kernels_match_python_reference.
 
 
+# ----------------------------------------------------------------------
+# T-40a: LUT-optimized hot-path parity + speedup
+
+def test_pvec_parity_vec_vs_scalar():
+    """`_cell_potential_vector_vec` (LUT-optimized) must match the scalar
+    reference byte-for-byte across 2 000 random (blocked, carpet, opp, own)
+    configurations."""
+    from RattleBot.heuristic import (
+        _cell_potential_vector_py,
+        _cell_potential_vector_vec,
+    )
+    rng = random.Random(0xBABE)
+    diffs = 0
+    for _ in range(2000):
+        blocked = rng.getrandbits(64)
+        carpet = rng.getrandbits(64) & ~blocked
+        opp_bit = 1 << rng.randrange(64)
+        own_bit = 1 << rng.randrange(64)
+        v_py = _cell_potential_vector_py(blocked, carpet, opp_bit, own_bit)
+        v_vec = _cell_potential_vector_vec(blocked, carpet, opp_bit, own_bit)
+        if not np.array_equal(v_py, v_vec):
+            diffs += 1
+    assert diffs == 0, f"p-vec LUT parity: {diffs}/2000 mismatches"
+
+
+def test_cpw_parity_vec_vs_scalar():
+    """`_cell_potential_for_worker_vec` must match the scalar reference
+    within 1e-9 across 2 000 random (blocked, worker, opp) configurations."""
+    from RattleBot.heuristic import (
+        _cell_potential_for_worker_py,
+        _cell_potential_for_worker_vec,
+        _LAMBDA, _BETA, _CARPET_VALUE,
+    )
+    rng = random.Random(0xCAFE)
+    diffs = 0
+    for _ in range(2000):
+        blockers = rng.getrandbits(64)
+        wx = rng.randrange(BOARD_SIZE)
+        wy = rng.randrange(BOARD_SIZE)
+        opp_x = rng.randrange(BOARD_SIZE)
+        opp_y = rng.randrange(BOARD_SIZE)
+        a = _cell_potential_for_worker_py(
+            blockers, wx, wy, opp_x, opp_y, _LAMBDA, _BETA, _CARPET_VALUE,
+        )
+        b = _cell_potential_for_worker_vec(
+            blockers, wx, wy, opp_x, opp_y, _LAMBDA, _BETA, _CARPET_VALUE,
+        )
+        if abs(a - b) > 1e-9:
+            diffs += 1
+    assert diffs == 0, f"cpw LUT parity: {diffs}/2000 mismatches"
+
+
+def test_scalar_ref_env_var_routes_to_python():
+    """Setting `RATTLEBOT_HEURISTIC_REF=1` in a child process must force
+    the pure-Python scalar path, not the LUT-optimized one."""
+    import subprocess
+    import textwrap
+    script = textwrap.dedent(
+        """
+        import os, sys
+        sys.path.insert(0, os.path.join(os.getcwd(), 'engine'))
+        sys.path.insert(0, os.path.join(os.getcwd(), '3600-agents'))
+        from RattleBot.heuristic import _USE_SCALAR_REF
+        print('SCALAR_REF', _USE_SCALAR_REF)
+        """
+    )
+    env = os.environ.copy()
+    env["RATTLEBOT_HEURISTIC_REF"] = "1"
+    env.pop("RATTLEBOT_NUMBA", None)
+    cp = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True, text=True, env=env,
+        cwd=_REPO_ROOT,
+    )
+    assert cp.returncode == 0, f"child rc={cp.returncode} err={cp.stderr}"
+    assert "SCALAR_REF True" in cp.stdout, f"got: {cp.stdout}"
+
+
+def test_vec_is_not_slower_than_scalar():
+    """Warm micro-benchmark: LUT path must be at least as fast as the
+    scalar reference across both hot functions. A regression here means
+    the LUT indirection added overhead rather than removing it."""
+    from RattleBot.heuristic import (
+        _cell_potential_vector_py,
+        _cell_potential_vector_vec,
+        _cell_potential_for_worker_py,
+        _cell_potential_for_worker_vec,
+        _LAMBDA, _BETA, _CARPET_VALUE,
+    )
+    rng = random.Random(0xFACE)
+    N = 2000
+    pvec_args = [
+        (
+            rng.getrandbits(64),
+            rng.getrandbits(64),
+            1 << rng.randrange(64),
+            1 << rng.randrange(64),
+        )
+        for _ in range(N)
+    ]
+    cpw_args = [
+        (
+            rng.getrandbits(64),
+            rng.randrange(BOARD_SIZE),
+            rng.randrange(BOARD_SIZE),
+            rng.randrange(BOARD_SIZE),
+            rng.randrange(BOARD_SIZE),
+        )
+        for _ in range(N)
+    ]
+    # warm
+    _cell_potential_vector_py(*pvec_args[0])
+    _cell_potential_vector_vec(*pvec_args[0])
+    _cell_potential_for_worker_py(*cpw_args[0], _LAMBDA, _BETA, _CARPET_VALUE)
+    _cell_potential_for_worker_vec(*cpw_args[0], _LAMBDA, _BETA, _CARPET_VALUE)
+
+    def _bench(fn, args_list, extra=()):
+        t0 = time.perf_counter()
+        for a in args_list:
+            fn(*a, *extra)
+        return time.perf_counter() - t0
+
+    # 3 trials, take min (least noise)
+    pvec_py = min(_bench(_cell_potential_vector_py, pvec_args) for _ in range(3))
+    pvec_v = min(_bench(_cell_potential_vector_vec, pvec_args) for _ in range(3))
+    cpw_py = min(_bench(_cell_potential_for_worker_py, cpw_args, (_LAMBDA, _BETA, _CARPET_VALUE)) for _ in range(3))
+    cpw_v = min(_bench(_cell_potential_for_worker_vec, cpw_args, (_LAMBDA, _BETA, _CARPET_VALUE)) for _ in range(3))
+
+    # Allow small slack (10%) for Windows timer jitter.
+    assert pvec_v <= pvec_py * 1.1, (
+        f"pvec LUT regressed: py={pvec_py*1e6/N:.2f}us vec={pvec_v*1e6/N:.2f}us"
+    )
+    assert cpw_v <= cpw_py * 1.1, (
+        f"cpw LUT regressed: py={cpw_py*1e6/N:.2f}us vec={cpw_v*1e6/N:.2f}us"
+    )
+
+
 def _run_all():
     tests = [
         test_evaluate_returns_float,
@@ -1090,6 +1227,10 @@ def _run_all():
         test_numba_opt_in_activates_jit,
         test_numba_warmup_is_fast_second_time,
         test_evaluate_returns_same_value_both_backends,
+        test_pvec_parity_vec_vs_scalar,
+        test_cpw_parity_vec_vs_scalar,
+        test_scalar_ref_env_var_routes_to_python,
+        test_vec_is_not_slower_than_scalar,
     ]
     fails = 0
     for t in tests:
