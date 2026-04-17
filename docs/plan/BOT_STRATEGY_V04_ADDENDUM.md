@@ -94,29 +94,71 @@ Team-lead's ask (a). Four options:
 
 Team-lead's ask (c). Beyond F17/F18 (already shipped).
 
-### F19 — `rat_catch_threat_radius` — RECOMMENDED for v0.4
+### F19 — `rat_catch_threat_radius` — SHIPPED v0.4 (semantic revised)
 
-**Definition:** number of cells the rat could reach from its current argmax-belief position within 2 rat plies, weighted by belief mass. Proxy: `|{c : argmax(b) reachable within 2 T-steps}| · max(b)`. Captures the "if we don't act now, the rat disperses" urgency.
+**Shipped definition (canonical as of T-40b / commit 883dadc):**
+`F19 = Σ_c belief[c] · I(Manhattan(worker, c) ≤ 2)`. Range `[0, 1]`.
+Probability-weighted "rat is near me right now" signal. High F19 = a lot of
+belief mass is within 2 Manhattan steps of our worker → a SEARCH at the
+argmax is cheap-to-reach and high-EV; the root-level SEARCH gate in
+`agent.py` (which triggers on `belief.max_mass > 1/3`) is tightly coupled
+to this exact quantity.
 
-**Why:** V01_LOSS_ANALYSIS showed RattleBot loses points on late-game turns where belief is sharp but the worker is far — by the time worker traverses, rat has diffused. F19 encodes "the time-value of information" geometrically. Missing signal.
+**Why (revised):** RattleBot's SEARCH EV is maximised when belief is
+concentrated AND that concentration is near our worker. F19 measures
+exactly that. F19 high → good (we can cash in), so the weight is
+**positive**.
 
-**Cost:** O(~5) lookups on precomputed T^1, T^2 reach sets in `__init__`. < 5 µs/leaf.
+**Cost:** 1 BLAS dot over the precomputed `_NEAR2_MASK[worker_idx]` 64-entry
+row. Constant-time (~0.4 µs/leaf). No precompute of T^1/T^2 needed.
 
-**Expected ELO Δ:** +8 to +20. Smaller than F17 because it's a refinement signal, not a new semantic axis.
+**Expected ELO Δ:** +8 to +20 (unchanged estimate from architect's version).
 
-**`w_init`:** sign **negative** (higher threat = worse for us), initial `−0.15`. BO bound: `[−1.0, 0.0]`.
+**`w_init`:** sign **positive** (near-belief + near-worker = good), initial
+**`+0.3`**. BO bound: **`[0.0, +1.5]`** — positive-half-axis, sign-locked
+per BO doctrine.
 
-### F20 — `opp_roll_imminence` — RECOMMENDED for v0.4
+**Reconciliation note (resolves AUDIT_V04_CHECKLIST §3):** the earlier draft
+of this section had F19 as "rat-dispersion urgency" with a negative weight
+(−0.15, bounds `[−1.0, 0.0]`). Shipped code went with the team-lead's
+T-40b brief which specified `+0.3`. Post-ship review (team-lead
+confirmation on 2026-04-17) resolved the mismatch in favour of the
+shipped semantic: F19 is OUR belief, not opp's, so it quantifies OUR
+ability to cash in the SEARCH-EV opportunity — not any external threat.
+"Opp threat" framing has no kinematic grounding (F19 doesn't use opp
+worker position at all). Canonical from this commit forward is the
+shipped SEARCH-EV-opportunity semantic + positive sign. AUDIT_V04_CHECKLIST
+§3 flag may be marked resolved.
 
-**Definition:** max over opponent's primed rays of `CARPET_POINTS_TABLE[k]` where `k` is the longest rollable distance **starting from opp's worker position on their next ply**. Already implicit in F8 but F8 is a max over ALL their primed rays regardless of their worker — F20 is "what can opp roll RIGHT NOW".
+### F20 — `opp_roll_imminence` — SHIPPED v0.4 (definition revised)
 
-**Why:** Current F8 overweights distant primed lines opp can't actually reach this turn. F20 is sharper: a 5-ray adjacent to opp's worker is worth far more than a 5-ray five squares away.
+**Shipped definition (canonical as of T-40b / commit 883dadc):**
+`F20 = max over 4 cardinal directions of longest_run(opp_worker, dir)`,
+where `longest_run` counts contiguous PRIMED-or-SPACE cells (blocked by
+BLOCKED, CARPET, or either worker). Range `[0, 7]`. Integer count, NOT
+a point value.
 
-**Cost:** O(4) ray scans from opp worker position.
+**Strict superset of F8:** F8 counts only already-PRIMED cells; F20 also
+counts SPACE. When opp has no current primes, F8 = 0 but F20 > 0 if
+there's an empty corridor they could set up in. Captures looming threats
+one or two plies out.
 
-**Expected ELO Δ:** +10 to +25. High because it triggers direct defensive action (park to deny).
+**Why (revised from architect's draft):** a raw-run-length signal BO can
+tune against is more useful than a pre-scaled `CARPET_POINTS_TABLE[k]`
+value (which would pre-embed our assumption of which k matters most).
+Shipping the integer means BO sets the weight that maps "run length"
+into "points-of-concern"; it lets BO discover e.g. that threats start
+mattering at k ≥ 4 rather than us hard-coding it.
 
-**`w_init`:** sign **negative**, initial `−0.40`. BO bound: `[−2.0, 0.0]`.
+**Cost:** O(4) ray scans from opp worker. ~1-2 µs/leaf.
+
+**Expected ELO Δ:** +10 to +25 (unchanged).
+
+**`w_init`:** sign **negative** (big run length = big opp threat), initial
+**`−0.6`**. BO bound: **`[−1.5, 0.0]`** — negative-half-axis, sign-locked
+per BO doctrine. (Architect's draft suggested `−0.40` + `[−2.0, 0.0]`;
+shipped magnitudes scaled for the integer-count feature vs architect's
+points-value proposal.)
 
 ### F21 — `belief_concentration_rate` — DEFER (conditional include)
 
