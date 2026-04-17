@@ -16,6 +16,25 @@ See docs/tests/PAIRED_RUNNER.md for the promotion protocol.
 
 from __future__ import annotations
 
+import os as _os_early
+
+# T-40-INFRA fix (2026-04-17): disable JAX's multi-threaded XLA runtime
+# BEFORE any engine import triggers `import jax` in `engine/gameplay.py`.
+# Rationale: jax's default eigen thread pool is incompatible with
+# multiprocessing.spawn on Windows and multiprocessing.fork on Linux
+# (JAX prints `RuntimeWarning: os.fork() was called. os.fork() is
+# incompatible with multithreaded code, and JAX is multithreaded, so
+# this will likely lead to a deadlock.`). The engine spawns a
+# PlayerProcess per agent inside play_game, and RattleBot's constructor
+# path (which unpickles a jax array from a Queue) can deadlock for
+# minutes. Forcing single-thread CPU XLA makes the post-spawn/fork
+# state safe. Identical workaround to tools/wsl_engine_runner.py,
+# validated there for sandbox-sim. Zero functional impact — engine's
+# jax use in _load_transition_matrix is one-shot, not a hot path.
+_os_early.environ.setdefault("XLA_FLAGS", "--xla_cpu_multi_thread_eigen=false")
+_os_early.environ.setdefault("JAX_PLATFORMS", "cpu")
+_os_early.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+
 import argparse
 import json
 import math
@@ -235,6 +254,13 @@ class PairResult:
 
 def _run_pair(args_tuple):
     """Worker entry point: run both matches of a single pair."""
+    # T-40-INFRA defensive: make sure spawn-children still force
+    # single-thread XLA even if the top-level module state didn't
+    # propagate. Idempotent.
+    os.environ.setdefault("XLA_FLAGS", "--xla_cpu_multi_thread_eigen=false")
+    os.environ.setdefault("JAX_PLATFORMS", "cpu")
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+
     (
         pair_index,
         pair_seed,

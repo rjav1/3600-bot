@@ -41,6 +41,22 @@ Requires: scikit-optimize>=0.10.2 (added to requirements.txt).
 
 from __future__ import annotations
 
+import os as _os_early
+
+# T-40-INFRA fix (2026-04-17): disable JAX's multi-threaded XLA runtime
+# before any engine import triggers `import jax`. JAX's eigen thread
+# pool deadlocks under multiprocessing.spawn on Windows and under
+# multiprocessing.fork on Linux (JAX emits `RuntimeWarning: os.fork()
+# was called. os.fork() is incompatible with multithreaded code, and
+# JAX is multithreaded, so this will likely lead to a deadlock.`).
+# BO pools 15+ workers each spawning the engine, so this was the
+# 0-trial deadlock seen on RUN1-v2/v3. Single-thread CPU XLA is safe.
+# Same workaround as `tools/wsl_engine_runner.py` and
+# `tools/paired_runner.py`.
+_os_early.environ.setdefault("XLA_FLAGS", "--xla_cpu_multi_thread_eigen=false")
+_os_early.environ.setdefault("JAX_PLATFORMS", "cpu")
+_os_early.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+
 import argparse
 import json
 import math
@@ -132,6 +148,13 @@ def _eval_one_pair(task: dict) -> dict:
     before importing paired_runner, so RattleBot's __init__ picks up
     the BO candidate weights.
     """
+    # T-40-INFRA: single-thread XLA inside the child. Must be set BEFORE
+    # the child imports engine/gameplay (which imports jax). On spawn
+    # the child has already re-executed our top-level block so these
+    # are set, but be defensive — idempotent.
+    os.environ.setdefault("XLA_FLAGS", "--xla_cpu_multi_thread_eigen=false")
+    os.environ.setdefault("JAX_PLATFORMS", "cpu")
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
     os.environ["RATTLEBOT_WEIGHTS_JSON"] = task["weights_path"]
 
     if str(TOOLS_DIR) not in sys.path:
