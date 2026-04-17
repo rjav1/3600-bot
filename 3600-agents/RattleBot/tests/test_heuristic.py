@@ -308,6 +308,17 @@ def test_symmetry():
     assert feats_rev[16] >= 0.0
     assert feats_fwd[16] <= 200.0
     assert feats_rev[16] <= 200.0
+    # F10 (opp-mobility-denied + adjacency) is a non-negative integer
+    # count: worst case 4 (all four neighbors) + many endpoint hits <= 8.
+    assert feats_fwd[17] >= 0.0
+    assert feats_rev[17] >= 0.0
+    assert feats_fwd[17] <= 16.0
+    assert feats_rev[17] <= 16.0
+    # F24 (opp-wasted-primes) is a non-negative integer count, ≤ 64.
+    assert feats_fwd[18] >= 0.0
+    assert feats_rev[18] >= 0.0
+    assert feats_fwd[18] <= 64.0
+    assert feats_rev[18] <= 64.0
 
 
 def test_per_call_timing():
@@ -920,6 +931,135 @@ def test_f22_feature_slot_wired_correctly():
     assert feats[16] == 4.0
 
 
+def test_f10_counts_primed_carpet_adjacent_to_opp():
+    """T-40-EXPLOIT-2 F10 base: count PRIMED/CARPET cells cardinal-
+    adjacent to opp's worker."""
+    from RattleBot.heuristic import _opp_mobility_denied_plus_adjacency
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(5, 5), blockers=False
+    )
+    board.set_cell((4, 5), Cell.PRIMED)    # adjacent
+    board.set_cell((5, 4), Cell.PRIMED)    # adjacent
+    board.set_cell((6, 5), Cell.CARPET)    # adjacent
+    # (5,6) is SPACE; other neighbors not primed/carpet.
+    # Adjacency bonus: our worker at (0,0) is not adjacent to any
+    # endpoint (isolated primes with k=1 don't count as lines anyway).
+    assert _opp_mobility_denied_plus_adjacency(board) == 3
+
+
+def test_f10_rewards_our_adjacency_to_primed_endpoint():
+    """T-40-EXPLOIT-2 F10 adjacency bonus: our worker adjacent to a
+    primed-line endpoint (k ≥ 2)."""
+    from RattleBot.heuristic import _opp_mobility_denied_plus_adjacency
+    board = _fresh_board(
+        player_pos=(2, 0), opp_pos=(7, 7), blockers=False
+    )
+    # Primed k=2 H-line: (3,0)(4,0). Endpoints: (3,0) and (4,0).
+    # Our worker (2,0) is Manhattan 1 from (3,0) → +1. Not from (4,0).
+    # Base (opp 7,7 has no primed/carpet neighbors) = 0.
+    board.set_cell((3, 0), Cell.PRIMED)
+    board.set_cell((4, 0), Cell.PRIMED)
+    assert _opp_mobility_denied_plus_adjacency(board) == 1
+
+
+def test_f10_counts_both_endpoints_when_adjacent():
+    """If our worker is adjacent to BOTH endpoints (trivially: k=2
+    line adjacent to our worker with both endpoints within Manhattan
+    1), count both."""
+    from RattleBot.heuristic import _opp_mobility_denied_plus_adjacency
+    board = _fresh_board(
+        player_pos=(3, 1), opp_pos=(7, 7), blockers=False
+    )
+    # Vertical k=2 line: (3,2)(3,3). Our worker (3,1). Manhattan
+    # to (3,2)=1, to (3,3)=2. Only (3,2) within 1.
+    board.set_cell((3, 2), Cell.PRIMED)
+    board.set_cell((3, 3), Cell.PRIMED)
+    assert _opp_mobility_denied_plus_adjacency(board) == 1
+
+
+def test_f10_ignores_k1_lines():
+    """Isolated primes (k=1) don't contribute to adjacency bonus."""
+    from RattleBot.heuristic import _opp_mobility_denied_plus_adjacency
+    board = _fresh_board(
+        player_pos=(2, 0), opp_pos=(7, 7), blockers=False
+    )
+    board.set_cell((3, 0), Cell.PRIMED)  # isolated, k=1
+    # Base = 0 (opp 7,7 no adjacent primed/carpet).
+    # Adjacency: k=1 ignored.
+    assert _opp_mobility_denied_plus_adjacency(board) == 0
+
+
+def test_f10_feature_slot_wired_correctly():
+    from RattleBot.heuristic import _opp_mobility_denied_plus_adjacency
+    board = _fresh_board(
+        player_pos=(2, 0), opp_pos=(5, 5), blockers=False
+    )
+    for loc in [(3, 0), (4, 0)]:
+        board.set_cell(loc, Cell.PRIMED)
+    board.set_cell((4, 5), Cell.PRIMED)  # opp's adjacency
+    bs = _uniform_belief_summary()
+    feats = features(board, bs)
+    direct = _opp_mobility_denied_plus_adjacency(board)
+    assert feats[17] == direct
+    # Base 1 (opp-adj primed) + adj 1 (our endpoint-adj) = 2.
+    assert feats[17] == 2.0
+
+
+def test_f24_mirrors_f17_on_opp_side():
+    """T-40-EXPLOIT-3 F24: same logic as F17 but uses opp's worker +
+    turns_left."""
+    from RattleBot.heuristic import _opp_wasted_primes, _count_dead_primes
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(3, 3), blockers=False
+    )
+    board.player_worker.turns_left = 5
+    board.opponent_worker.turns_left = 20
+    # Isolated primes: (2,2) dist 2 from opp, (7,7) dist 8. Both reachable
+    # by opp at tl=20.
+    board.set_cell((2, 2), Cell.PRIMED)
+    board.set_cell((7, 7), Cell.PRIMED)
+    # Adjacent pair — NOT dead.
+    board.set_cell((4, 4), Cell.PRIMED)
+    board.set_cell((4, 5), Cell.PRIMED)
+    assert _opp_wasted_primes(board) == 2
+    # Cross-check: from our worker's frame (tl=5, pos (0,0)), (2,2) is
+    # dist 4 ≤ 5 reachable, (7,7) is dist 14 > 5 not reachable. F17 = 1.
+    assert _count_dead_primes(board) == 1
+
+
+def test_f24_uses_opp_turns_left_for_reachability():
+    """F24 reachability uses opp.turns_left, not ours."""
+    from RattleBot.heuristic import _opp_wasted_primes
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(3, 3), blockers=False
+    )
+    board.opponent_worker.turns_left = 5
+    # (2,2) is dist 2 → reachable. (7,7) is dist 8 → not reachable at tl=5.
+    board.set_cell((2, 2), Cell.PRIMED)
+    board.set_cell((7, 7), Cell.PRIMED)
+    assert _opp_wasted_primes(board) == 1
+
+
+def test_f24_zero_when_no_primes():
+    from RattleBot.heuristic import _opp_wasted_primes
+    board = _fresh_board(player_pos=(0, 0), opp_pos=(3, 3), blockers=False)
+    assert _opp_wasted_primes(board) == 0
+
+
+def test_f24_feature_slot_wired_correctly():
+    from RattleBot.heuristic import _opp_wasted_primes
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(3, 3), blockers=False
+    )
+    board.opponent_worker.turns_left = 20
+    board.set_cell((2, 2), Cell.PRIMED)
+    bs = _uniform_belief_summary()
+    feats = features(board, bs)
+    direct = _opp_wasted_primes(board)
+    assert feats[18] == direct
+    assert feats[18] == 1.0
+
+
 def test_class_wrapper_matches_module_fn():
     board = _fresh_board()
     bs = _uniform_belief_summary()
@@ -1318,6 +1458,15 @@ def _run_all():
         test_f22_counts_each_line_once,
         test_f22_zero_when_no_primes,
         test_f22_feature_slot_wired_correctly,
+        test_f10_counts_primed_carpet_adjacent_to_opp,
+        test_f10_rewards_our_adjacency_to_primed_endpoint,
+        test_f10_counts_both_endpoints_when_adjacent,
+        test_f10_ignores_k1_lines,
+        test_f10_feature_slot_wired_correctly,
+        test_f24_mirrors_f17_on_opp_side,
+        test_f24_uses_opp_turns_left_for_reachability,
+        test_f24_zero_when_no_primes,
+        test_f24_feature_slot_wired_correctly,
         test_class_wrapper_matches_module_fn,
         test_weight_shape_validation,
         test_numba_kernels_match_python_reference,

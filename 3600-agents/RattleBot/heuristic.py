@@ -1,4 +1,4 @@
-"""F2 linear leaf evaluator — v0.4.1 (17 features, + F22 prime-steal).
+"""F2 linear leaf evaluator — v0.4.2 (19 features, + F10/F24 exploits).
 
 9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c
 expanded by 3 distance-kernel features (T-20c.1) per
@@ -13,6 +13,11 @@ JIT-compiles the three hot functions (`_ray_reach`,
 module-level `_USE_NUMBA` kill-switch. v0.3.1 (T-30b) adds **F17**
 priming-lockout (count of dead/isolated primes within our reach)
 and **F18** opp-belief-proxy (post-opp-search belief entropy).
+v0.4.2 (T-40-EXPLOIT-2/3) adds **F10** opp_mobility_denied + adjacency
+bonus (count of PRIMED/CARPET cardinal neighbors of opp worker PLUS
+primed-line endpoints cardinal-adjacent to our worker) and **F24**
+opp_wasted_primes (mirror of F17 against opp's reachable primes —
+rewards maneuvering opp into wasteful priming).
 v0.4.1 (T-40-EXPLOIT-1) adds **F22** prime_steal_bonus (sum over
 primed lines where our worker is closer to a line endpoint than the
 opponent, weighted by CARPET_POINTS_TABLE[k]; rewards positions where
@@ -108,6 +113,21 @@ Features (all float64, sign-carried by W_INIT):
                                   we treat every line as a candidate
                                   and rely on our-closer-than-opp to
                                   pick real steal targets.
+  F10 opp_mobility_denied_plus_adj = count of PRIMED|CARPET cardinal
+                                  neighbors of opp_worker PLUS count of
+                                  primed-line endpoints (k ≥ 2) that
+                                  are cardinal-adjacent to our_worker.
+                                  Per OPPONENT_EXPLOITS §T-40-EXPLOIT-2.
+                                  Positive weight — higher = opp is
+                                  boxed AND/OR we're adjacent-to-steal.
+                                  Integer in [0, 8] typical.
+  F24 opp_wasted_primes         = mirror of F17 applied to opp's side:
+                                  count of primed cells reachable by
+                                  opp within opp.turns_left AND isolated
+                                  (no primed cardinal neighbor). Per
+                                  OPPONENT_EXPLOITS §T-40-EXPLOIT-3.
+                                  Positive weight — their dead primes
+                                  are good for us. Integer in [0, 64].
 
   P(c) = best-roll-value-if-worker-stood-at-c (ray scan through
          BLOCKED/CARPET/opp-worker blockers, Manhattan-extended using
@@ -116,7 +136,7 @@ Features (all float64, sign-carried by W_INIT):
 Public API (module-level):
 
     evaluate(board, belief_summary, weights=None) -> float
-    features(board, belief_summary) -> np.ndarray   # shape (17,) float64
+    features(board, belief_summary) -> np.ndarray   # shape (19,) float64
 
 A thin Heuristic class is kept for downstream consumers (search engine).
 
@@ -200,7 +220,7 @@ def is_numba_active() -> bool:
     return bool(_USE_NUMBA and _NUMBA_AVAILABLE)
 
 
-N_FEATURES: int = 17
+N_FEATURES: int = 19
 
 # Terminal eval = (player_points - opp_points) * TERMINAL_SCALE.
 # Chosen >> any realistic non-terminal eval so minimax always prefers
@@ -294,10 +314,35 @@ GAMMA_RESET: float = 0.3
 #                      Falsification per OPPONENT_EXPLOITS §T-40-EXPLOIT-1:
 #                      if paired George scrimmage shows 0 actual
 #                      steals in 20 matches, drop from W_INIT.
+#  17   F10    +0.15   Opp-mobility-denied + adjacent-to-primed-endpoint
+#                      bonus. Per T-40-EXPLOIT-2 / OPPONENT_EXPLOITS.md
+#                      §T-40-EXPLOIT-2: sum of (a) count of PRIMED or
+#                      CARPET cells cardinal-adjacent to opp worker
+#                      (mobility-denied base); (b) count of primed-line
+#                      endpoints (k ≥ 2) that are cardinal-adjacent to
+#                      OUR worker (we're perfectly positioned to steal
+#                      next ply). Positive — higher = we've boxed opp in
+#                      AND/OR we're adjacent to a steal. Small magnitude
+#                      because each sub-signal is in [0, 4].
+#                      Attribution caveat: "cells we've primed/carpeted"
+#                      is aspirational (engine doesn't track) — we count
+#                      all PRIMED/CARPET cells since those equally
+#                      restrict opp movement regardless of who laid them.
+#  18   F24    +0.15   Opp-wasted-primes (mirror of F17). Per T-40-EXPLOIT-3
+#                      / OPPONENT_EXPLOITS.md §T-40-EXPLOIT-3: count of
+#                      primed cells that are (a) within Manhattan ≤ opp's
+#                      turns_left of opp's worker (reachable) AND (b)
+#                      isolated (no primed cardinal neighbor). These are
+#                      "dead primes" on opp's side — opp paid +1 to prime
+#                      them but can only extract −1 by rolling k=1.
+#                      Albert/Carrie's simple heuristics likely miss this
+#                      penalty, so the signal tells us to maneuver them
+#                      into over-priming. Positive — their dead primes
+#                      are good for us.
 #
 W_INIT: np.ndarray = np.array(
     [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05, 0.15, 0.10, 0.10,
-     -0.4, 0.1, 0.3, -0.6, 0.3],
+     -0.4, 0.1, 0.3, -0.6, 0.3, 0.15, 0.15],
     dtype=np.float64,
 )
 assert W_INIT.shape == (N_FEATURES,)
@@ -1107,6 +1152,129 @@ def _prime_steal_bonus(board: board_mod.Board) -> float:
     return total
 
 
+def _opp_mobility_denied_plus_adjacency(board: board_mod.Board) -> int:
+    """F10 helper (T-40-EXPLOIT-2): combined mobility-denied + adjacency
+    bonus per OPPONENT_EXPLOITS §T-40-EXPLOIT-2.
+
+    Returns an integer count:
+      base = count of cardinal-adjacent cells to OPP's worker that are
+             PRIMED or CARPET (these restrict opp movement regardless
+             of who laid them — opp can't step onto a PRIMED cell per
+             SPEC §2.1 and we can walk through the resulting CARPET
+             anyway, so the mobility-denied signal is ownership-
+             agnostic).
+      adjacency_bonus = count of primed-line endpoints (k ≥ 2) that are
+             cardinal-adjacent to OUR worker. Signals "we are one plain
+             step from being perfectly positioned to start rolling a
+             primed line next turn" — tight coupling with F22's steal
+             signal but distinct in that F22 rewards being NEAREST to
+             an endpoint while F10-adj rewards being DIRECTLY ADJACENT.
+
+    Returns `base + adjacency_bonus`, an integer typically in [0, 8].
+    """
+    primed = board._primed_mask
+    carpet = board._carpet_mask
+    ox, oy = board.opponent_worker.position
+    wx, wy = board.player_worker.position
+
+    # Part (a): base mobility-denied. Count PRIMED/CARPET cardinal
+    # neighbors of opp worker.
+    base = 0
+    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+        nx, ny = ox + dx, oy + dy
+        if not (0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE):
+            continue
+        bit = 1 << (ny * BOARD_SIZE + nx)
+        if (primed | carpet) & bit:
+            base += 1
+
+    # Part (b): adjacency to primed-line endpoints. Scan H + S as in
+    # _prime_steal_bonus's line-start dedup; for each maximal primed
+    # run of k ≥ 2, check both endpoints against our worker's cardinal
+    # neighbors (Manhattan == 1).
+    adjacency_bonus = 0
+    if primed != 0:
+        for dx, dy in ((1, 0), (0, 1)):
+            for idx in range(_BOARD_CELLS):
+                bit = 1 << idx
+                if not (primed & bit):
+                    continue
+                x = idx % BOARD_SIZE
+                y = idx // BOARD_SIZE
+                # Line-start dedup
+                px, py = x - dx, y - dy
+                if 0 <= px < BOARD_SIZE and 0 <= py < BOARD_SIZE:
+                    prev_bit = 1 << (py * BOARD_SIZE + px)
+                    if primed & prev_bit:
+                        continue
+                # Walk forward
+                k = 1
+                nx, ny = x + dx, y + dy
+                while (
+                    0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE
+                    and (primed & (1 << (ny * BOARD_SIZE + nx)))
+                ):
+                    k += 1
+                    nx += dx
+                    ny += dy
+                if k < 2:
+                    continue
+                ex, ey = x + (k - 1) * dx, y + (k - 1) * dy
+                # Test each endpoint against our worker's Manhattan-1.
+                if abs(wx - x) + abs(wy - y) == 1:
+                    adjacency_bonus += 1
+                if abs(wx - ex) + abs(wy - ey) == 1:
+                    adjacency_bonus += 1
+
+    return base + adjacency_bonus
+
+
+def _opp_wasted_primes(board: board_mod.Board) -> int:
+    """F24 helper (T-40-EXPLOIT-3): mirror of F17 applied to OPP's
+    reachable primes. Count primed cells that are (a) reachable by opp's
+    worker before the game ends (Manhattan ≤ opp.turns_left), AND (b)
+    isolated (no primed cardinal neighbor). These are "dead primes" on
+    opp's side — they'll only roll as k=1 for −1 point.
+
+    Same attribution approximation as F17 / F3 / F4 (engine doesn't track
+    prime ownership). The signal is: "opp has paid +1 to prime cells that
+    can at best return −1 by rolling as k=1". Albert/Carrie's simple
+    heuristics likely miss this penalty, so the feature rewards positions
+    where we've maneuvered them into wasteful priming.
+
+    Returns int in [0, 64]. Typical mid-game 0-3.
+    """
+    primed = board._primed_mask
+    if primed == 0:
+        return 0
+    ox, oy = board.opponent_worker.position
+    opp_turns_left = int(board.opponent_worker.turns_left)
+
+    count = 0
+    for idx in range(_BOARD_CELLS):
+        bit = 1 << idx
+        if not (primed & bit):
+            continue
+        px = idx % BOARD_SIZE
+        py = idx // BOARD_SIZE
+        # Reachability from opp's worker
+        if abs(px - ox) + abs(py - oy) > opp_turns_left:
+            continue
+        # Isolation check: any primed cardinal neighbor?
+        has_primed_neighbor = False
+        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            nx, ny = px + dx, py + dy
+            if not (0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE):
+                continue
+            nbit = 1 << (ny * BOARD_SIZE + nx)
+            if primed & nbit:
+                has_primed_neighbor = True
+                break
+        if not has_primed_neighbor:
+            count += 1
+    return count
+
+
 def _belief_com_distance(
     worker_xy, belief_summary: BeliefSummary
 ) -> float:
@@ -1243,7 +1411,7 @@ def _opp_belief_entropy(
 def features(
     board: board_mod.Board, belief_summary: BeliefSummary
 ) -> np.ndarray:
-    """Compute the 17-feature vector (float64) from the perspective of
+    """Compute the 19-feature vector (float64) from the perspective of
     `board.player_worker`. Fast path for leaf eval.
 
     No allocation beyond the returned array; all sub-calculations reuse
@@ -1313,6 +1481,14 @@ def features(
     # closer to the nearer endpoint than opp's worker. O(64) over the
     # primed mask with early terminations.
     out[16] = _prime_steal_bonus(board)
+
+    # F10 — opp mobility denied + primed-endpoint-adjacency bonus
+    # (T-40-EXPLOIT-2). Integer count, typically in [0, 8].
+    out[17] = float(_opp_mobility_denied_plus_adjacency(board))
+
+    # F24 — opp wasted primes: mirror of F17 applied to opp's reachable
+    # primes (T-40-EXPLOIT-3). Integer count, typically in [0, 3].
+    out[18] = float(_opp_wasted_primes(board))
 
     return out
 

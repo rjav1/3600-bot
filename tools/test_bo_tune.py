@@ -76,7 +76,8 @@ def test_agent_loads_tuned_weights_from_env():
              0.2, 0.1, 0.1,
              -0.3, 0.08,
              0.25, -0.5,
-             0.25]
+             0.25,
+             0.12, 0.13]
     assert len(tuned) == N_FEATURES
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -128,7 +129,8 @@ def test_agent_reads_bare_list_format():
              0.15, 0.10, 0.10,
              -0.4, 0.10,
              0.3, -0.6,
-             0.3]
+             0.3,
+             0.15, 0.15]
     assert len(tuned) == N_FEATURES
     with tempfile.NamedTemporaryFile(
         mode="w",

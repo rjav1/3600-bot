@@ -127,6 +127,13 @@ BOUNDS: List[Tuple[float, float]] = [
     # Positive — steal-able primed lines are good for us. Range
     # typically 0-20 per OPPONENT_EXPLOITS §T-40-EXPLOIT-1.
     (+0.0, +1.0),   # F22 prime_steal_bonus
+    # T-40-EXPLOIT-2 (v0.4.2) — F10 opp-mobility-denied + adj bonus.
+    # Integer in [0, 8]. Positive — opp boxed-in + we're adjacent to
+    # a steal.
+    (+0.0, +0.5),   # F10 opp_mobility_denied_plus_adj
+    # T-40-EXPLOIT-3 (v0.4.2) — F24 opp_wasted_primes. Integer in
+    # [0, 64]. Positive — opp's dead primes are good for us.
+    (+0.0, +1.0),   # F24 opp_wasted_primes
 ]
 
 # Hard-tuned default (matches RattleBot.heuristic.W_INIT).
@@ -136,6 +143,7 @@ W_INIT: List[float] = [
     -0.4, 0.1,
     0.3, -0.6,
     0.3,
+    0.15, 0.15,
 ]
 
 # Light L2 regulariser pulling toward `w_init`. See §2.5 "Objective".
