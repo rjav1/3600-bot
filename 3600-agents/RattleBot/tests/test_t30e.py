@@ -32,6 +32,7 @@ from RattleBot.time_mgr import (
     ENDGAME_HARD_CAP_MULT,
     ENDGAME_TURNS_THRESHOLD,
     DEFAULT_PER_TURN_CEILING_S,
+    SEARCH_OVERHEAD_PAD_S,
 )
 
 
@@ -128,11 +129,14 @@ def test_m7_endgame_budget_bypasses_ceiling():
     assert budget > DEFAULT_PER_TURN_CEILING_S + 1e-6, (
         f"endgame still clamped at 6 s: budget={budget:.3f}s"
     )
-    # Exact bound: min(cap_mult × base, ENDGAME_HARD_CEILING_S, usable).
+    # Exact bound: min(cap_mult × base, ENDGAME_HARD_CEILING_S, usable),
+    # minus the T-40c-prereq 0.3 s search-overhead pad.
     usable = 60.0 - tm.safety_s
     base = usable / 3
     cap_bound = base * ENDGAME_HARD_CAP_MULT
-    expected = min(cap_bound, ENDGAME_HARD_CEILING_S, usable)
+    expected = (
+        min(cap_bound, ENDGAME_HARD_CEILING_S, usable) - SEARCH_OVERHEAD_PAD_S
+    )
     assert abs(budget - expected) < 1e-6, (
         f"expected ≈{expected:.3f}s, got {budget:.3f}s"
     )
@@ -144,11 +148,12 @@ def test_m7_endgame_with_moderate_time_hits_ceiling():
     b = _board()
     b.player_worker.turns_left = 3
     tm = TimeManager()
-    # time_left=120 s, base=(119.5)/3≈39.83 s, cap_bound≈139.4 s
-    # → clamped to ENDGAME_HARD_CEILING_S=20 s.
+    # time_left=120 s, base=(119.5)/3≈39.83 s, cap_bound≈139.4 s →
+    # clamped to ENDGAME_HARD_CEILING_S=20 s, then 0.3 s pad (T-40c-prereq).
     budget = tm.start_turn(b, lambda: 120.0)
-    assert abs(budget - ENDGAME_HARD_CEILING_S) < 1e-6, (
-        f"expected {ENDGAME_HARD_CEILING_S}s, got {budget:.3f}s"
+    expected = ENDGAME_HARD_CEILING_S - SEARCH_OVERHEAD_PAD_S
+    assert abs(budget - expected) < 1e-6, (
+        f"expected {expected}s, got {budget:.3f}s"
     )
 
 

@@ -31,6 +31,7 @@ from RattleBot.time_mgr import (
     ENDGAME_HARD_CAP_MULT,
     ENDGAME_TURNS_THRESHOLD,
     HARD_CAP_MULT,
+    SEARCH_OVERHEAD_PAD_S,
 )
 
 
@@ -65,17 +66,24 @@ def test_start_turn_respects_six_second_ceiling():
     # 6 s ceiling pins it.
     tm = TimeManager(per_turn_ceiling_s=6.0)
     budget = tm.start_turn(b, lambda: 120.0)
-    assert budget == 6.0, f"expected ceiling=6.0, got {budget}"
+    # T-40c-prereq: pad subtracts 0.3s AFTER ceiling clamp.
+    assert abs(budget - (6.0 - SEARCH_OVERHEAD_PAD_S)) < 1e-6, (
+        f"expected ceiling - pad, got {budget}"
+    )
 
 
 def test_start_turn_below_ceiling_is_untouched():
-    """When the adaptive budget is below the ceiling, no clamp kicks in."""
+    """When the adaptive budget is below the ceiling, no clamp kicks in.
+    Still subject to the T-40c-prereq 0.3 s pad; classify() with
+    turns_left>=36 labels this "easy" (0.6× multiplier).
+    """
     b = _board()
     b.player_worker.turns_left = 40
-    # time_left=40s, turns_left=40 -> base = 0.9875 s, normal = 1.0x -> 0.9875
+    # time_left=40s, turns_left=40 -> base ≈ 0.99 s, easy×0.6=0.59s,
+    # pad-0.3 ≈ 0.29 s.
     tm = TimeManager(per_turn_ceiling_s=6.0)
     budget = tm.start_turn(b, lambda: 40.0)
-    assert 0.5 < budget < 1.5, f"expected ~1s, got {budget}"
+    assert 0.05 < budget < 1.5, f"expected ~0.3s, got {budget}"
 
 
 def test_custom_ceiling_overrides_default():
@@ -87,7 +95,8 @@ def test_custom_ceiling_overrides_default():
     b.player_worker.turns_left = 10  # > ENDGAME_TURNS_THRESHOLD=5
     tm = TimeManager(per_turn_ceiling_s=3.0)
     budget = tm.start_turn(b, lambda: 120.0)
-    assert budget == 3.0
+    # T-40c-prereq: pad subtracts 0.3 s AFTER ceiling clamp.
+    assert abs(budget - (3.0 - SEARCH_OVERHEAD_PAD_S)) < 1e-6
 
 
 # --- T-20b: single-source safety_s --------------------------------------
@@ -214,7 +223,8 @@ def test_endgame_multiplier_extended_at_low_turns_left():
     base = usable / 3
     old_cap = base * HARD_CAP_MULT       # 249.58 s
     new_cap = base * ENDGAME_HARD_CAP_MULT  # 349.42 s
-    bounded = min(new_cap, usable)
+    # T-40c-prereq: pad subtracts 0.3 s from the clamped budget.
+    bounded = min(new_cap, usable) - SEARCH_OVERHEAD_PAD_S
 
     assert budget > old_cap + 1e-6, (
         f"budget {budget:.3f}s did not clear 2.5x base={old_cap:.3f}s"
@@ -246,6 +256,37 @@ def test_endgame_safety_s_still_reserved():
     # time_left=0.4s < safety_s: usable==0, budget collapses to min.
     budget = tm.start_turn(b, lambda: 0.4)
     assert budget <= 0.1, f"safety_s violated: budget={budget}"
+
+
+# --- T-40c-prereq: search-overhead pad --------------------------------
+
+
+def test_start_turn_pad_reserved_for_search_overhead():
+    """T-40c-prereq: final budget leaves SEARCH_OVERHEAD_PAD_S below
+    the caller's cap so total play() wall stays inside the ceiling.
+    """
+    b = _board()
+    b.player_worker.turns_left = 10  # midgame
+    tm = TimeManager()
+    # time_left=60s → base=(59.5)/10=5.95s, under 6s ceiling.
+    # Post-pad: 5.95 − 0.3 = 5.65 s.
+    budget = tm.start_turn(b, lambda: 60.0)
+    usable = 60.0 - tm.safety_s
+    base = usable / 10
+    assert abs(budget - (base - SEARCH_OVERHEAD_PAD_S)) < 1e-6
+
+
+def test_pad_does_not_starve_tiny_budgets():
+    """When usable is already near zero, the pad must not drop the
+    budget below _MIN_BUDGET_S — the floor protects search-always-runs.
+    """
+    b = _board()
+    b.player_worker.turns_left = 10
+    tm = TimeManager()
+    # time_left=0.55 → usable=0.05 → below pad floor.
+    budget = tm.start_turn(b, lambda: 0.55)
+    assert budget > 0.0
+    assert budget <= 0.1  # min_budget is 0.05, capped to usable
 
 
 if __name__ == "__main__":

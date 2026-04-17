@@ -34,6 +34,7 @@ __all__ = [
     "CONTEXT_ENTROPY_COEF",
     "CONTEXT_VARIANCE_COEF",
     "CONTEXT_VARIANCE_HIGH_THRESHOLD",
+    "SEARCH_OVERHEAD_PAD_S",
 ]
 
 
@@ -53,6 +54,12 @@ ENDGAME_TURNS_THRESHOLD: int = 5
 ENDGAME_HARD_CEILING_S: float = 20.0
 _MULTIPLIER = {"easy": 0.6, "normal": 1.0, "critical": 1.6}
 _MIN_BUDGET_S = 0.05
+# T-40c-prereq (see docs/audit/TIME_OVERRUN_TRIAGE.md §4.3): subtract
+# a pad from the final budget so total play() wall — which includes
+# belief update, TT probe for T-40c root-value history, GC pauses,
+# and search-side overshoot between node-count deadline checks —
+# stays inside the declared ceiling.
+SEARCH_OVERHEAD_PAD_S: float = 0.3
 # v0.2 default per T-20a / AUDIT_V01 M-01: 6.0 s matches the tournament
 # base budget (240 s / 40 turns). v0.1 shipped 3.0 s as a provisional
 # cap while the heuristic was uncalibrated; with BO-tuned weights the
@@ -230,6 +237,14 @@ class TimeManager:
         # 0.5 s reserve stays intact regardless of the upper caps.
         if budget > usable:
             budget = usable
+        # T-40c-prereq: subtract the search-overhead pad AFTER all
+        # other caps so total play() wall stays inside the ceiling
+        # even when search overshoots its per-deadline check by a few
+        # ms and outside-search work (belief update, TT probe, GC)
+        # adds its own overhead. Floor at _MIN_BUDGET_S so the pad
+        # can't starve the search entirely when time is already short.
+        if budget > _MIN_BUDGET_S + SEARCH_OVERHEAD_PAD_S:
+            budget -= SEARCH_OVERHEAD_PAD_S
         if budget < _MIN_BUDGET_S:
             budget = min(_MIN_BUDGET_S, max(0.0, usable))
 

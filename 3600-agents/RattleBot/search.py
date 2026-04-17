@@ -31,6 +31,10 @@ MATE_SCORE: float = 1e9
 DRAW_SCORE: float = 0.0
 MAX_DEPTH: int = 32
 _TIME_CHECK_EVERY = 1024
+# T-40c-prereq: at depths >= 6 where leaf eval dominates runtime, use
+# a tighter 256-node cadence. Bounds worst-case post-check overshoot
+# to ~15 ms (256 leaves × ~60 µs/leaf) vs ~60 ms at 1024.
+_TIME_CHECK_DEEP = 256
 _CUTOFF_HIST_BUCKETS = 8  # index i = cutoff on i-th move (i>=7 clamps to 7)
 
 
@@ -258,6 +262,10 @@ class Search:
 
         age = board.turn_count
         for mv in ordered:
+            # T-40c-prereq: per-child deadline check at the root so a
+            # single deep child subtree can't carry us past the budget.
+            # Raises `_TimeUp` which iterative_deepen catches.
+            self._time_check()
             child = board.forecast_move(mv, check_ok=False)
             if child is None:
                 continue
@@ -314,7 +322,15 @@ class Search:
 
     def _alphabeta(self, board, depth, alpha, beta, ply_from_root):
         self.nodes += 1
-        if (self.nodes & (_TIME_CHECK_EVERY - 1)) == 0:
+        # T-40c-prereq: tighten cadence at deep iterations. Leaves at
+        # d≥6 are dominant in runtime, so the 1024-node stride could
+        # overshoot a per-move budget by hundreds of ms. At d<6 the
+        # 1024 stride keeps check overhead amortized.
+        if depth >= 6:
+            check_mask = _TIME_CHECK_DEEP - 1
+        else:
+            check_mask = _TIME_CHECK_EVERY - 1
+        if (self.nodes & check_mask) == 0:
             self._time_check()
 
         if board.is_game_over():
