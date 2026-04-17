@@ -4,8 +4,18 @@ import pickle
 import random
 import time
 from collections.abc import Iterable
-import jax
-import jax.numpy as jnp
+import numpy as np
+
+# T-40-INFRA-ENGINE (2026-04-17): dropped jax dependency here. Previous
+# implementation used jax.random + jnp arrays, which imports JAX at
+# module load and starts its multi-threaded XLA eigen pool. That pool
+# deadlocks when play_game spawns PlayerProcess children under
+# multiprocessing.spawn (Windows) or fork (Linux); see
+# docs/audit/BO_DEADLOCK_TRIAGE.md. Swapping to numpy.random removes
+# the JAX import from the engine's hot path entirely and unblocks
+# paired_runner/bo_tune pool-parallelism. Output distribution is
+# byte-for-byte equivalent in statistics: uniform [-0.1, +0.1]
+# multiplicative noise, clipped to >= 0, row-renormalized, float32.
 
 def _load_transition_matrix():
     base_dir = os.path.join(os.path.dirname(__file__), "transition_matrices")
@@ -16,15 +26,15 @@ def _load_transition_matrix():
 
     with open(pkl_path, "rb") as f:
         T = pickle.load(f)
-    T = jnp.asarray(T, dtype=jnp.float32)
+    T = np.asarray(T, dtype=np.float32)
 
     # Add up to 10% multiplicative noise per entry, then re-validate the matrix.
-    key = jax.random.PRNGKey(random.randint(0, 2**32 - 1))
-    noise = jax.random.uniform(key, T.shape, minval=-0.1, maxval=0.1)
-    T = jnp.maximum(T * (1 + noise), 0)
+    rng = np.random.default_rng(random.randint(0, 2**32 - 1))
+    noise = rng.uniform(-0.1, 0.1, size=T.shape).astype(np.float32)
+    T = np.maximum(T * (1 + noise), 0)
 
     row_sum = T.sum(axis=1, keepdims=True)
-    row_sum = jnp.where(row_sum == 0, 1.0, row_sum)
+    row_sum = np.where(row_sum == 0, 1.0, row_sum)
     T = T / row_sum
 
     return T

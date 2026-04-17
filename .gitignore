@@ -37,6 +37,9 @@ mlruns/
 tmp/
 scratch/
 
+# Claude Code runtime state (scheduler locks, scheduled task tracking)
+.claude/
+
 # Bytefight client — sensitive (contains auth tokens / signed URLs)
 tools/scratch/*.har
 tools/bytefight_session.json
