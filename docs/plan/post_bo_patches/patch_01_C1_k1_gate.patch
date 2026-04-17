@@ -1,0 +1,43 @@
+From: post-bo-patch-prep
+Subject: [PATCH 01/04] C-1: k=1 CARPET gate — confirm R5 is subsumed by existing filter
+
+Per docs/audit/LOSS_FORENSICS_APR17.md §4.R5 and
+docs/audit/COMPETITIVE_INTEL_APR17.md §5.C-1: "forbid k=1 CARPET unless
+ALL alternatives evaluate below −1."
+
+The existing T-20f filter in move_gen.ordered_moves is strictly tighter
+than R5: it drops k=1 CARPET whenever ANY non-k=1 legal move exists,
+which is a superset of the R5 condition. Therefore R5 is a no-op
+against the current implementation.
+
+This patch adds a docstring note documenting that decision so a future
+reader does not reintroduce a weaker gate. No behaviour change.
+
+---
+ 3600-agents/RattleBot/move_gen.py | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+--- a/3600-agents/RattleBot/move_gen.py
++++ b/3600-agents/RattleBot/move_gen.py
+@@ -10,10 +10,20 @@
+ v1.1 invariant (D-011 item 2): with exclude_search=True (interior nodes),
+ the returned list contains NO SEARCH moves.
+
+-v0.2 T-20f (V01_LOSS_ANALYSIS bug 1): k=1 CARPET rolls are strictly
++v0.2 T-20f / v0.4 C-1 (V01_LOSS_ANALYSIS bug 1 + LOSS_FORENSICS_APR17
++§4.R5 + COMPETITIVE_INTEL_APR17 §5.C-1): k=1 CARPET rolls are strictly
+ dominated (−1 point with no upside). We drop k=1 CARPET moves from the
+ returned list UNLESS no non-k=1 legal move exists.
+
++C-1 / R5 audit note: the R5 proposal "forbid k=1 unless ALL alternatives
++evaluate below −1" is strictly subsumed by the `has_non_k1` gate below —
++whenever ANY non-k=1 legal move exists we already drop k=1, and
++therefore the `has_non_k1` case never leaves k=1 in the candidate list
++alongside another move that could score ≥ −1. Implementing R5 literally
++(requiring an eval pass inside move generation) would only re-enable
++k=1 in positions where we already suppress it. No code change; this is
++a no-op documentation patch.
++
+ v0.2 T-20g (SEARCH_PROFILE §3 #4): the sort key is now a plain int, the
+ k=1 filter + type-priority + immediate-delta + history lookup is computed
+ in a single pre-pass that also builds a `{MoveKey: Move}` map — so each

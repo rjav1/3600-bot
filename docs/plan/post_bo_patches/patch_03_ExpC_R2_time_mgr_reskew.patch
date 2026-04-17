@@ -1,0 +1,252 @@
+From: post-bo-patch-prep
+Subject: [PATCH 03/04] Exp C + R2: time_mgr phase re-skew + 220s cumulative cap
+
+Per docs/audit/ARCH_CONTRARIAN_APR17.md §4 Experiment C and
+docs/audit/LOSS_FORENSICS_APR17.md §4.R2.
+
+Exp C — redirect the time budget from low-information openings into
+the tactical mid-game:
+  opening   (turns_left > 30):      0.6× → 0.3×
+  mid       (10 < turns_left ≤ 30): 1.0× → 1.3×
+  endgame   (turns_left ≤ 10):      use 2.5× (was 3.5× at ≤ 5 only)
+
+R2 — defensive reduction of endgame multiplier from 3.5× to 2.5× (now
+the endgame phase multiplier in Exp C) AND a hard cumulative ceiling
+of 220 s total play time. The `cumulative_used >= 220` guard returns
+a floor budget so search aborts and we ship the best-so-far / fallback
+move, eliminating the Match-2-vs-alexBot "finished at 241 s" failure
+mode.
+
+Critical-belief composition preserved: when `turns_left <= 4` or
+`max_mass >= 0.35`, the phase multiplier is lifted to the 1.6×
+critical floor (via max). ENDGAME_TURNS_THRESHOLD widens 5 → 10 so
+the endgame phase/ceiling line up.
+
+Adds 2 tests per task brief: `test_multiplier_by_phase` and
+`test_220s_cumulative_cap`.
+
+---
+ 3600-agents/RattleBot/time_mgr.py            |  66 +++++++++++++++-----
+ 3600-agents/RattleBot/tests/test_time_mgr.py |  85 ++++++++++++++++++++++
+ 2 files changed, 137 insertions(+), 14 deletions(-)
+
+--- a/3600-agents/RattleBot/time_mgr.py
++++ b/3600-agents/RattleBot/time_mgr.py
+@@ -35,23 +35,37 @@
+     "CONTEXT_VARIANCE_COEF",
+     "CONTEXT_VARIANCE_HIGH_THRESHOLD",
+     "SEARCH_OVERHEAD_PAD_S",
++    "HARD_CUM_CEILING_S",
++    "PHASE_MULT_OPENING",
++    "PHASE_MULT_MID",
++    "PHASE_MULT_ENDGAME",
+ ]
+
+
+ SAFETY_S: float = 0.5
+ HARD_CAP_MULT: float = 2.5
+-# T-30d (V03 ADDENDUM §3, §12): endgame turns are higher-stakes and the
+-# board is typically full enough that branching is reduced — reward
+-# deeper search by lifting the surplus cap from 2.5× to 3.5× when
+-# `turns_left <= ENDGAME_TURNS_THRESHOLD`. Expected +10–20 ELO.
+-ENDGAME_HARD_CAP_MULT: float = 3.5
+-ENDGAME_TURNS_THRESHOLD: int = 5
+-# T-30e M-7 fix (V03_REDTEAM): under the default 6 s ceiling, the 3.5×
+-# endgame lift was silently clamped — at base≈5-10 s, 3.5× = 17-35 s
+-# all pinned to 6 s. Give the endgame a dedicated ceiling that still
+-# respects `time_left - safety_s` and doesn't remove the ceiling
+-# entirely. 20 s is the V03_REDTEAM recommendation.
++# v0.4 Exp C (ARCH_CONTRARIAN_APR17 §4 Experiment C) + R2
++# (LOSS_FORENSICS_APR17 §4.R2): re-skew the time budget away from
++# low-information openings into the tactical mid-game. Endgame
++# multiplier drops from 3.5× (T-30d) to 2.5× as R2's defensive
++# reduction of the "finished at 241 s" failure mode.
++#   opening   (turns_left > 30):       0.3×   (was 0.6× easy)
++#   mid       (10 < turns_left ≤ 30):  1.3×   (was 1.0× normal)
++#   endgame   (turns_left ≤ 10):       2.5×   (was 3.5× at ≤ 5 only)
++PHASE_MULT_OPENING: float = 0.3
++PHASE_MULT_MID: float = 1.3
++PHASE_MULT_ENDGAME: float = 2.5
++ENDGAME_HARD_CAP_MULT: float = PHASE_MULT_ENDGAME
++ENDGAME_TURNS_THRESHOLD: int = 10
++# T-30e M-7: endgame dedicated ceiling. Kept at 20 s — the v0.4 mult
++# is lower (2.5× vs 3.5×) so the nominal big-turn budget is lower.
+ ENDGAME_HARD_CEILING_S: float = 20.0
++# R2 (LOSS_FORENSICS_APR17 §4.R2): hard cumulative play-time ceiling.
++# Engine budget is 240 s per side; we hold ourselves to 220 s so we
++# never return a move at or past the wall. Safety_s (0.5 s) is a
++# per-turn reserve; this is a whole-game reserve stacked on top.
++HARD_CUM_CEILING_S: float = 220.0
++# Preserved classifier labels for backwards-compat telemetry/tests.
+ _MULTIPLIER = {"easy": 0.6, "normal": 1.0, "critical": 1.6}
+ _MIN_BUDGET_S = 0.05
+ # T-40c-prereq (see docs/audit/TIME_OVERRUN_TRIAGE.md §4.3): subtract
+@@ -189,24 +203,48 @@
+             time_left = float(
+                 getattr(board.player_worker, "time_left", self.total_budget_s)
+             )
++        # R2 (LOSS_FORENSICS_APR17 §4.R2): if we have already burned
++        # the cumulative budget, force immediate abort so we ship the
++        # best-so-far / fallback move and never cross the 240 s wall.
++        if self.cumulative_used >= HARD_CUM_CEILING_S:
++            self.turn_budgets_planned.append(_MIN_BUDGET_S)
++            self.classification_log.append("cum_ceiling")
++            self._turn_start = _time.perf_counter()
++            self._turn_budget = _MIN_BUDGET_S
++            return _MIN_BUDGET_S
++
+         usable = max(0.0, time_left - self.safety_s)
+         turns_left = int(getattr(board.player_worker, "turns_left", 1) or 1)
+         turns_left = max(1, turns_left)
+         base = usable / turns_left
+
+-        label = self.classify(board, belief_summary)
+-        mult = _MULTIPLIER.get(label, 1.0)
+-        # T-30d: endgame multiplier cap lift. When turns_left is at or
+-        # below ENDGAME_TURNS_THRESHOLD, lift both (a) the effective
+-        # multiplier up to ENDGAME_HARD_CAP_MULT and (b) the surplus
+-        # cap to the same value — endgame turns are higher-stakes and
+-        # lower-branching, so more time → deeper search → higher-EV.
+-        # Safety reserve above (`usable = time_left - safety_s`) still
+-        # applies; we only extend the upward cap, not the floor.
++        # v0.4 Exp C + R2: phase-driven multipliers replace the old
++        # easy/normal label dict. Critical belief / last-4-plies still
++        # forces the 1.6× floor (composed via max).
++        if turns_left > 30:
++            phase_mult = PHASE_MULT_OPENING
++            label = "opening"
++        elif turns_left > ENDGAME_TURNS_THRESHOLD:
++            phase_mult = PHASE_MULT_MID
++            label = "mid"
++        else:
++            phase_mult = PHASE_MULT_ENDGAME
++            label = "endgame"
++        critical_floor = _MULTIPLIER["critical"]
++        is_critical = (
++            turns_left <= 4
++            or (
++                belief_summary is not None
++                and belief_summary.max_mass >= 0.35
++            )
++        )
++        if is_critical and phase_mult < critical_floor:
++            mult = critical_floor
++            label = "critical"
++        else:
++            mult = phase_mult
+         in_endgame = turns_left <= ENDGAME_TURNS_THRESHOLD
+         cap_mult = ENDGAME_HARD_CAP_MULT if in_endgame else HARD_CAP_MULT
+-        if in_endgame and mult < cap_mult:
+-            mult = cap_mult
+         budget = base * mult
+         hard_cap = base * cap_mult
+         if budget > hard_cap:
+@@ -237,6 +275,14 @@
+         # 0.5 s reserve stays intact regardless of the upper caps.
+         if budget > usable:
+             budget = usable
++        # R2: also clamp against remaining cumulative budget so that
++        # even if the per-turn calc says "20 s", we never consume more
++        # than (HARD_CUM_CEILING_S - cumulative_used) in one turn.
++        cum_remaining = HARD_CUM_CEILING_S - self.cumulative_used
++        if cum_remaining < 0.0:
++            cum_remaining = 0.0
++        if budget > cum_remaining:
++            budget = cum_remaining
+         # T-40c-prereq: subtract the search-overhead pad AFTER all
+         # other caps so total play() wall stays inside the ceiling
+         # even when search overshoots its per-deadline check by a few
+--- a/3600-agents/RattleBot/tests/test_time_mgr.py
++++ b/3600-agents/RattleBot/tests/test_time_mgr.py
+@@ -289,6 +289,91 @@
+     assert budget <= 0.1  # min_budget is 0.05, capped to usable
+
+
++# --- v0.4 Exp C + R2: phase multipliers + cumulative ceiling -----------
++
++
++def test_multiplier_by_phase():
++    """v0.4 Exp C: phase-driven multipliers replace the v0.2 easy/normal
++    labels. Opening (turns_left > 30) → 0.3×, mid (10 < turns_left ≤ 30)
++    → 1.3×, endgame (turns_left ≤ 10) → 2.5×. Budget should track the
++    multiplier proportionally at base = usable / turns_left.
++    """
++    from RattleBot.time_mgr import (
++        PHASE_MULT_OPENING,
++        PHASE_MULT_MID,
++        PHASE_MULT_ENDGAME,
++        SEARCH_OVERHEAD_PAD_S,
++    )
++
++    assert PHASE_MULT_OPENING == 0.3
++    assert PHASE_MULT_MID == 1.3
++    assert PHASE_MULT_ENDGAME == 2.5
++
++    # Opening: turns_left=35, time_left=180 → base=(179.5)/35≈5.13 s
++    # → 0.3× = 1.54 s, under 6 s ceiling, minus 0.3 s pad ≈ 1.24 s.
++    b = _board()
++    b.player_worker.turns_left = 35
++    tm = TimeManager(per_turn_ceiling_s=6.0)
++    budget_open = tm.start_turn(b, lambda: 180.0)
++    expected_open = (179.5 / 35) * PHASE_MULT_OPENING - SEARCH_OVERHEAD_PAD_S
++    assert abs(budget_open - expected_open) < 1e-6, (
++        f"opening: expected {expected_open:.3f}, got {budget_open:.3f}"
++    )
++
++    # Mid: turns_left=20 → base=(179.5)/20≈8.98 s → 1.3× = 11.67 s,
++    # clamped by 6 s ceiling, minus 0.3 s pad = 5.7 s.
++    b = _board()
++    b.player_worker.turns_left = 20
++    tm = TimeManager(per_turn_ceiling_s=6.0)
++    budget_mid = tm.start_turn(b, lambda: 180.0)
++    # The 6 s ceiling is the active upper bound here.
++    assert abs(budget_mid - (6.0 - SEARCH_OVERHEAD_PAD_S)) < 1e-6, (
++        f"mid: expected ~5.7s, got {budget_mid:.3f}"
++    )
++
++    # Endgame: turns_left=8 → base=(179.5)/8≈22.44 s → 2.5× = 56.1 s,
++    # clamped by endgame ceiling 20 s, minus 0.3 s pad = 19.7 s.
++    b = _board()
++    b.player_worker.turns_left = 8
++    tm = TimeManager(per_turn_ceiling_s=6.0)
++    budget_end = tm.start_turn(b, lambda: 180.0)
++    assert abs(budget_end - (20.0 - SEARCH_OVERHEAD_PAD_S)) < 1e-6, (
++        f"endgame: expected ~19.7s, got {budget_end:.3f}"
++    )
++
++
++def test_220s_cumulative_cap():
++    """R2 (LOSS_FORENSICS_APR17 §4.R2): once cumulative_used reaches
++    HARD_CUM_CEILING_S (220 s), start_turn returns the floor budget
++    (_MIN_BUDGET_S) so search aborts and we ship the fallback move.
++    The clamp also applies progressively below the ceiling: the
++    remaining cumulative budget is an upper bound on every turn.
++    """
++    from RattleBot.time_mgr import HARD_CUM_CEILING_S
++
++    assert HARD_CUM_CEILING_S == 220.0
++
++    # At the ceiling: start_turn must return _MIN_BUDGET_S (0.05).
++    b = _board()
++    b.player_worker.turns_left = 8  # endgame, would otherwise give big budget
++    tm = TimeManager(per_turn_ceiling_s=6.0)
++    tm.cumulative_used = HARD_CUM_CEILING_S
++    budget = tm.start_turn(b, lambda: 40.0)
++    assert budget <= 0.05 + 1e-9, (
++        f"R2 cumulative guard: expected _MIN_BUDGET_S, got {budget:.6f}"
++    )
++
++    # Just below the ceiling: budget must not exceed (ceiling - used).
++    b = _board()
++    b.player_worker.turns_left = 8
++    tm = TimeManager(per_turn_ceiling_s=6.0)
++    tm.cumulative_used = HARD_CUM_CEILING_S - 2.0  # 2 s left
++    budget = tm.start_turn(b, lambda: 40.0)
++    assert budget <= 2.0 + 1e-6, (
++        f"R2 progressive clamp: expected <= 2.0s, got {budget:.3f}"
++    )
++
++
+ if __name__ == "__main__":
+     import pytest as _p
+     sys.exit(_p.main([__file__, "-v"]))

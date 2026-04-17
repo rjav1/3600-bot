@@ -1,0 +1,72 @@
+From: post-bo-patch-prep
+Subject: [PATCH 04/04] Version bump: RattleBot v0.2 → v0.4 in docstrings
+
+Cosmetic-only version-string bump per task brief (#96 / T-95):
+  - agent.py line 1 docstring + line 157 commentate() string
+  - move_gen.py line 1 docstring
+  - time_mgr.py line 1 docstring
+  - search.py line 1 docstring
+  - rat_belief.py line 1 docstring ("v0.1" → "v0.4")
+
+No code change. Each hunk targets line 1 of its file (and agent.py line
+157, which is inside commentate()), both locations that patches 01-03
+do NOT touch, so this patch applies cleanly on top of 01-03 in any
+order.
+
+---
+ 3600-agents/RattleBot/agent.py       | 4 ++--
+ 3600-agents/RattleBot/move_gen.py    | 2 +-
+ 3600-agents/RattleBot/rat_belief.py  | 2 +-
+ 3600-agents/RattleBot/search.py      | 2 +-
+ 3600-agents/RattleBot/time_mgr.py    | 2 +-
+ 5 files changed, 6 insertions(+), 6 deletions(-)
+
+--- a/3600-agents/RattleBot/agent.py
++++ b/3600-agents/RattleBot/agent.py
+@@ -1,4 +1,4 @@
+-"""RattleBot v0.2 — end-to-end wiring.
++"""RattleBot v0.4 — end-to-end wiring.
+
+ Entry-point `PlayerAgent` per CLAUDE.md §4 / BOT_STRATEGY.md v1.1 §3.1
+ with v0.2 updates from BOT_STRATEGY_V02_ADDENDUM:
+@@ -154,7 +154,7 @@
+             else float("nan")
+         )
+         return (
+-            "RattleBot v0.2 — alpha-beta + ID + HMM belief "
++            "RattleBot v0.4 — alpha-beta + ID + HMM belief "
+             f"(ceiling={ceiling:.1f}s)"
+         )
+
+--- a/3600-agents/RattleBot/move_gen.py
++++ b/3600-agents/RattleBot/move_gen.py
+@@ -1,4 +1,4 @@
+-"""Ordered move generation for RattleBot v0.2.
++"""Ordered move generation for RattleBot v0.4.
+
+ Per BOT_STRATEGY.md v1.1 §2.f / §3.5. Wraps `Board.get_valid_moves` and
+ applies the ordering stack:
+--- a/3600-agents/RattleBot/time_mgr.py
++++ b/3600-agents/RattleBot/time_mgr.py
+@@ -1,4 +1,4 @@
+-"""Adaptive time controller for RattleBot v0.2.
++"""Adaptive time controller for RattleBot v0.4.
+
+ Per BOT_STRATEGY.md v1.1 §3.6, D-004 (0.6x/1.0x/1.6x multipliers, 2.5x
+ surplus cap), D-011 item 4 (0.5 s safety margin matches `check_win`'s
+--- a/3600-agents/RattleBot/search.py
++++ b/3600-agents/RattleBot/search.py
+@@ -1,4 +1,4 @@
+-"""Alpha-beta + iterative deepening + Zobrist TT for RattleBot.
++"""Alpha-beta + iterative deepening + Zobrist TT for RattleBot v0.4.
+
+ Per BOT_STRATEGY.md v1.1 §2.a / §2.d / §2.f / §2.g / §3.3 and v0.2 addendum
+ §2.3 T-20e (move-ordering instrumentation).
+--- a/3600-agents/RattleBot/rat_belief.py
++++ b/3600-agents/RattleBot/rat_belief.py
+@@ -1,4 +1,4 @@
+-"""HMM rat-belief tracker — v0.1.
++"""HMM rat-belief tracker — v0.4.
+
+ Forward-filter HMM over the 64 rat-cells per BOT_STRATEGY.md v1.1 §3.2
+ and RESEARCH_HMM_RAT.md §A–§E. Owner: dev-hmm.

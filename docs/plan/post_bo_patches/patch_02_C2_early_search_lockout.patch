@@ -1,0 +1,59 @@
+From: post-bo-patch-prep
+Subject: [PATCH 02/04] C-2: early-game SEARCH lockout
+
+Per docs/audit/COMPETITIVE_INTEL_APR17.md §5.C-2 and
+docs/audit/LOSS_FORENSICS_APR17.md §4.R3/X-1: top-5 student teams fire
+only 20.7% of their SEARCH moves in plies 0-26; our losing-side corpus
+runs closer to 30-40% early SEARCH. Each early-bad-EV SEARCH costs
+−2 pts with no info gain against a near-uniform post-headstart belief.
+
+This patch adds a fourth condition to the three-factor SEARCH gate in
+agent._play_internal: lock SEARCH out when turns_left > 30 AND
+belief.max_mass <= 0.35. The sensor-pinned override (max_mass > 0.35)
+still lets us SEARCH even in ply 0 if the opening sensor reading
+already concentrated the belief. Expected +1.5 pts/match.
+
+The SEARCH gate lives in agent.py (not search.py as named in the
+original task brief); this patch edits agent.py for minimal surface
+area. Existing mass/entropy/consec-miss gate conditions unchanged;
+the new clause AND-composes so the gate becomes strictly stricter.
+
+---
+ 3600-agents/RattleBot/agent.py | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+--- a/3600-agents/RattleBot/agent.py
++++ b/3600-agents/RattleBot/agent.py
+@@ -87,6 +87,11 @@
+ SEARCH_GATE_MAX_CONSEC_MISSES: int = 2
+ SEARCH_GATE_ENTROPY_CEIL: float = 0.75 * math.log(64.0)  # ~3.122 nats
+ SEARCH_GATE_MASS_FLOOR: float = 1.0 / 3.0
++# v0.4 C-2 (COMPETITIVE_INTEL_APR17 §5.C-2): early-game SEARCH lockout.
++# Skip SEARCH entirely when `turns_left > 30` AND belief is flat
++# (max_mass <= 0.35). Overridden only by a sensor-pinned hot belief.
++SEARCH_GATE_EARLY_TURNS_LEFT: int = 30
++SEARCH_GATE_EARLY_MASS_THRESHOLD: float = 0.35
+
+
+ __all__ = ["PlayerAgent"]
+@@ -205,9 +210,19 @@
+         #   (a) max_mass > 1/3  — unconditional +4/-2 break-even
+         #   (b) entropy  < 0.75 * ln(64) ~= 3.12 nats — belief is peaked
+         #   (c) consec misses <= 2 — don't death-spiral on a stale peak
++        #   (d) v0.4 C-2: NOT (turns_left > 30 AND max_mass <= 0.35) —
++        #       early-game lockout unless belief is already sensor-pinned.
+         # T-20b: time_mgr owns the 0.5 s reserve; pass safety_s=0.0.
++        turns_left = int(
++            getattr(board.player_worker, "turns_left", 40) or 40
++        )
++        early_locked = (
++            turns_left > SEARCH_GATE_EARLY_TURNS_LEFT
++            and belief_summary.max_mass <= SEARCH_GATE_EARLY_MASS_THRESHOLD
++        )
+         search_gated = (
+-            belief_summary.max_mass > SEARCH_GATE_MASS_FLOOR
++            (not early_locked)
++            and belief_summary.max_mass > SEARCH_GATE_MASS_FLOOR
+             and belief_summary.entropy < SEARCH_GATE_ENTROPY_CEIL
+             and self._consec_search_misses <= SEARCH_GATE_MAX_CONSEC_MISSES
+         )
