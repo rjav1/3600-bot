@@ -2,7 +2,7 @@
 # tournament sandbox in child processes.
 import os, sys
 if os.environ.get('SANDBOX_SIM_ACTIVE') == '1':
-    sys.path.insert(0, 'C:\\Users\\rahil\\Downloads\\3600-bot\\tools')
+    sys.path.insert(0, '/mnt/c/Users/rahil/downloads/3600-bot/tools')
     try:
         import sandbox_sim
         sandbox_sim.install_sandbox()

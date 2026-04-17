@@ -318,12 +318,31 @@ Investigate before uploading.
 
 ## §8 — TODOs / follow-ups
 
-- **TODO (non-blocking):** Create a WSL venv with full
-  `requirements.txt` installed, so `sandbox_sim.sh` can run actual
-  engine matches in Py3.12 Linux. Gated by policy (no new OS
-  packages); user can run `python3 -m venv .wsl_venv && source
-  .wsl_venv/bin/activate && pip install -r requirements.txt` at
-  their discretion.
+- **~~TODO (non-blocking):~~ RESOLVED 2026-04-17 (T-62).** WSL now has
+  `jax numpy psutil numba scikit-learn` installed to user-site (not a
+  venv, `pip install --user --break-system-packages`). Full engine
+  matches run in WSL Py3.12 Linux via the new
+  `tools/wsl_engine_runner.py`. See `docs/tests/WSL_RETEST_V03.md` for
+  13 clean matches across RattleBot (numba ON + OFF) × Yolanda/FloorBot.
+- **New finding (T-62) — memory cap scope.** The 1.5 GB cap is a
+  **per-agent** cap in tournament (`engine/player_process.py:213-214`),
+  not a per-engine cap. JAX imported in `engine/gameplay.py:7-8`
+  needs hundreds of MB of VMA for its Eigen thread pool; capping the
+  engine parent with `ulimit -v 1572864` crashes JAX during init.
+  **Do NOT pass `--mem-kb 1572864` to `sandbox_sim.sh` when running
+  full engine matches.** For import-only sanity checks, the tight cap
+  is fine.
+- **New finding (T-62) — JAX + unshare.** Under `unshare -r -n` in
+  WSL, JAX hits `EAGAIN` on `pthread_create` building its Eigen pool.
+  Workaround (set as defaults in `tools/wsl_engine_runner.py`):
+  `XLA_FLAGS=--xla_cpu_multi_thread_eigen=false` + `JAX_PLATFORMS=cpu`.
+  Not a tournament concern — the tournament engine isn't under unshare.
+- **TODO (non-blocking):** `libseccomp-dev + python3-seccomp + prctl`
+  not installed in WSL. Blocks running `limit_resources=True` end-to-end
+  in WSL (to exercise the real seccomp BPF filter). Requires `sudo apt
+  install libseccomp-dev build-essential && pip install --user
+  --break-system-packages pyseccomp python-prctl`. Estimated ~20 min of
+  user action.
 - **TODO (non-blocking):** Wire `sandbox_sim.py --pytest` into a
   pre-commit hook so any RattleBot push runs the sandbox suite first.
 - **TODO (non-blocking):** Add a `--strict-seccomp` flag that also
