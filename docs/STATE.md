@@ -1,19 +1,20 @@
 # STATE — Rolling Snapshot
 
-**Last updated:** 2026-04-16 (contrarian-scope finished)
-**Current phase:** Phase 0 — Foundations
+**Last updated:** 2026-04-16 (research-synthesizer finished SYNTHESIS.md)
+**Current phase:** Phase 0 — Foundations (wave 1 synthesized; ready for Phase 1 Strategy-Architect)
 **Deadline:** 2026-04-19 23:59
 
 ## Active agents
 
-| Name               | Role                | Current task          | Status    |
-|--------------------|---------------------|-----------------------|-----------|
+| Name                 | Role                 | Current task            | Status    |
+|----------------------|----------------------|-------------------------|-----------|
 | game-analyst         | game-analyst         | Write GAME_SPEC.md      | completed |
 | researcher-hmm       | researcher-hmm       | RESEARCH_HMM_RAT.md     | completed |
 | researcher-search    | researcher-search    | RESEARCH_ADVERSARIAL.md | completed |
 | researcher-prior     | researcher-prior     | RESEARCH_PRIOR_ART.md   | completed |
 | researcher-heuristic | researcher-heuristic | RESEARCH_HEURISTIC.md   | completed |
 | contrarian-scope     | contrarian-scope     | CONTRARIAN_SCOPE.md     | completed |
+| research-synthesizer | research-synthesizer | SYNTHESIS.md            | completed |
 
 ## Recent decisions
 
@@ -25,6 +26,7 @@
 - **R-HEUR-002** (2026-04-16): `RESEARCH_HEURISTIC.md` bumped to v1.1 with new Section H reconciling GAME_SPEC §10 facts. Key amendments: (a) asymmetric spawn prior — A is always left-half (x∈{2,3}), B right-half; `P_opp_first(c)` must treat center cells (x=3,4) as contested, own-half cells as safe; F13 (center control) de-weighted. (b) Per-eval budget tightened to **≤ 100 μs** in tournament mode (240 s / 40 moves) — tilts preference further toward F2 linear over F3 NN; tuning harness must run with `limit_resources=True`. (c) SEARCH chance-node explicit: leaf eval must add `6p − 2` to F1 manually AND model belief-collapse side-effect (on hit, belief resets to `p_0 = e_0 @ T^1000` NOT `δ_{(0,0)}`); new F15 formula includes `−γ_reset · p · H(p_0)` term penalizing the belief-reset cost of a successful search.
 - **R-PRIOR-001** (2026-04-16): Prior-art research delivered in `docs/research/RESEARCH_PRIOR_ART.md`. (a) Carpet/rat game is new to Sp2026; no prior-winner code is public (only gatech.edu blurb on chicken-game winner "StockChicken", minimax+AB+Bayes). (b) Berkeley CS188 Project 4 "Ghostbusters" is a near-identical HMM setup — use its forward-algorithm recipe. (c) Gomoku threat-space-search heuristics directly apply to our super-linear carpet-roll bonus. (d) NN-from-scratch is an anti-pattern at <1-week timeline (Halite/Battlecode/CodinGame consensus). (e) Bytefight public page contains nothing beyond CLAUDE.md; no public leaderboard without login.
 - **R-SEARCH-001** (2026-04-16): Adversarial-search research delivered in `docs/research/RESEARCH_ADVERSARIAL.md`. Empirical branching factor **b ≈ 6.3–6.8 excluding SEARCH** (p90=8, late-max=11); **~70 with all 64 SEARCH moves**. Pure-Python throughput: 50 k node-expansions/sec, 318 k move-gen/sec, 48 k full-step/sec. Projected feasible α-β+ID+TT depth: **6–8 ply pure Python, 9–11 ply with numba leaf eval**. Eight candidates surveyed with pseudocode + 1–5 suitability (expectiminimax, *-minimax/Star1-2, α-β+ID+TT+Zobrist, MCTS-UCT, IS-MCTS, PUCT, beam, 1-ply policy) — no winner picked per the contrarian brief. Tentative defaults (all flippable): (1) rat belief as leaf-potential NOT in-tree chance nodes — keeps b at ~7 and matches R-HMM-001; (2) SEARCH excluded from tree, root-only EV-gated at `P(rat)>1/3`; (3) ID controller + 0.2 s safety + 0.6×/1.0×/1.6× adaptive multipliers; (4) move ordering stack = hash-move → killer → history → type-priority → immediate-point-delta; (5) NO null-move pruning (primed-line Zugzwang analogs), NO magic bitboards. 10 open decisions for Strategy-Architect in doc §I. Note: benchmarks above were run without `limit_resources=True`; tournament sandbox may shift nps ±20%, per C-SCOPE E-1.
+- **SYN-001** (2026-04-16): Wave-1 synthesis delivered in `docs/research/SYNTHESIS.md`. (a) §A–B consolidate 20 cross-confirmed agreed facts and consensus recommendations (α-β+ID+TT backbone, F2 9-feature linear heuristic with Carrie-style `P(c)` distance-discount, `p_0 = e_0 @ T^1000` prior and reset, SEARCH as manual chance node, `limit_resources=True` pinned, paired-match eval). (b) §C surfaces 8 unresolved tensions — reactive-floor-bot vs deep-arch insurance, in-tree vs leaf belief, max-belief vs min-entropy vs weighted search objective, F2 vs NN vs reactive, research-depth vs early-ship, architecture-selection bias, opponent-modeling priority, local-vs-tournament clock skew. (c) §D lists 22 open architectural choices with provisional defaults and flip-triggers; §E is a de-duplicated risk register (3 critical, 8 high, 9 medium) with owners; §F is a 15-row evidence-flipping matrix pre-committing falsifiable switch rules; §G is the Strategy-Architect 10-step decision agenda. Flagged missing pieces: no quantitative reactive-vs-primary ELO delta, unreconciled `≤ 100 μs per eval` vs `9–11 ply numba` envelope, HMM→search interface undecided.
 - **C-SCOPE-001** (2026-04-16): Red-team critique delivered in `docs/research/CONTRARIAN_SCOPE.md`. No pipeline-halting issue. Top recommendations (Phase-1-blockers): (1) enforce `limit_resources=True` in all benchmarking — dev-vs-tournament time/sandbox gap is underweighted; (2) rewrite `RESEARCH_ADVERSARIAL.md` brief to compare architectures (expectiminimax / MCTS / reactive policy / opponent-model), current scope is anchored on expectiminimax; (3) ship a reactive-policy floor bot by ~hour 12 as grade-floor (70%) insurance, before any deep architecture commit; (4) switch to paired-match eval (same T/spawn/seed) — 50 unpaired matches has ±14 pp 95% CI, inadequate for detecting 5 pp improvements; (5) add 1-day "opponent-specific exploit" track (model George/Albert/Carrie explicitly) — highest-leverage alt at ~0.25-0.35 P(beats Carrie); (6) honest grade-probability estimates: P(>70%)≈0.90, P(>80%)≈0.55, P(>90%)≈0.25.
 
 ## Blockers
