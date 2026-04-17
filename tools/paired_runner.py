@@ -50,11 +50,52 @@ def _import_engine():
     return gameplay, board_utils
 
 
+def _apply_tournament_budget_patch():
+    """Patch engine for tournament-accurate budget (240s play, 10s init)
+    without requiring Linux-only seccomp/setrlimit/UID-drop.
+
+    Rationale: the engine's `limit_resources=True` path does TWO things at once —
+    (a) sets play_time=240, init_timeout=10 (the budget we care about for T-30a
+    time-audit); (b) installs seccomp + setrlimit(RSS) + drops UID to
+    player_a_user/player_b_user (isolation we cannot reproduce on Windows,
+    and cannot reproduce on WSL without sudo for libseccomp-dev / gcc /
+    useradd). This function keeps (a) and skips (b), so we get real
+    tournament-budget enforcement on any platform. Use for TIME_AUDIT_V02
+    and any other gate that measures clock behavior, not isolation.
+    """
+    import sys as _sys
+
+    # Ensure engine is importable.
+    if str(ENGINE_DIR) not in _sys.path:
+        _sys.path.insert(0, str(ENGINE_DIR))
+
+    import player_process as _pp  # noqa: E402
+
+    # Stub out the Linux-only isolation calls. These are called inside the
+    # child process's run_player_process. Patches only propagate to children
+    # on platforms that use `fork` (Linux/WSL), because fork inherits the
+    # parent's sys.modules and attribute state. On `spawn` platforms
+    # (Windows, macOS) the child re-imports from scratch, so the parent's
+    # monkey-patches are NOT seen. That is why --tournament-budget is
+    # Linux/WSL only; we guard the CLI against Windows so we don't silently
+    # produce FAILED_INIT TIE summaries.
+    _pp.apply_seccomp = lambda: None
+    _pp.drop_priveliges = lambda *a, **k: None
+
+    # Skip setrlimit on Linux so RLIMIT_RSS doesn't collide with jax memory
+    # arenas. On Windows `resource` doesn't exist; we wouldn't hit this
+    # branch because the CLI would have already refused (see
+    # --tournament-budget guard in main()).
+    if "resource" in _sys.modules:
+        _sys.modules["resource"].setrlimit = lambda *a, **k: None
+
+
 def _run_single_match(
     agent_a: str,
     agent_b: str,
     pair_seed: int,
     limit_resources: bool,
+    tournament_budget: bool,
     quiet: bool,
 ) -> dict:
     """Run one match between agent_a (as player A) and agent_b (as player B).
@@ -62,8 +103,22 @@ def _run_single_match(
     `pair_seed` deterministically seeds Python's random module so that
     both matches in a pair (A-vs-B and B-vs-A) see the same transition
     matrix, corner blockers, spawn locations, and rat walk.
+
+    If `tournament_budget` is True, we patch the engine to run with
+    play_time=240, init_timeout=10 (the tournament values) without
+    engaging the Linux-only seccomp/setrlimit/UID-drop path. This is
+    portable across Windows and WSL and gives tournament-accurate time
+    enforcement even when the full sandbox isn't available.
     """
     gameplay, board_utils = _import_engine()
+
+    if tournament_budget:
+        _apply_tournament_budget_patch()
+        # After patching, we force the engine to treat this as
+        # limit_resources=True so play_time=240 / init_timeout=10 apply.
+        effective_limit_resources = True
+    else:
+        effective_limit_resources = limit_resources
 
     # Silence the engine's per-turn prints if requested.
     if quiet:
@@ -91,7 +146,7 @@ def _run_single_match(
         delay=0.0,
         clear_screen=False,
         record=True,
-        limit_resources=limit_resources,
+        limit_resources=effective_limit_resources,
     )
     elapsed = time.perf_counter() - t0
 
@@ -180,12 +235,24 @@ class PairResult:
 
 def _run_pair(args_tuple):
     """Worker entry point: run both matches of a single pair."""
-    pair_index, pair_seed, agent_a, agent_b, limit_resources, quiet = args_tuple
+    (
+        pair_index,
+        pair_seed,
+        agent_a,
+        agent_b,
+        limit_resources,
+        tournament_budget,
+        quiet,
+    ) = args_tuple
 
     # Match 1: agent_a plays as A, agent_b plays as B.
-    m1 = _run_single_match(agent_a, agent_b, pair_seed, limit_resources, quiet)
+    m1 = _run_single_match(
+        agent_a, agent_b, pair_seed, limit_resources, tournament_budget, quiet
+    )
     # Match 2: swapped sides.
-    m2 = _run_single_match(agent_b, agent_a, pair_seed, limit_resources, quiet)
+    m2 = _run_single_match(
+        agent_b, agent_a, pair_seed, limit_resources, tournament_budget, quiet
+    )
 
     return {
         "pair_index": pair_index,
@@ -441,6 +508,18 @@ def main():
         help="Disable resource limiting (required on Windows or without seccomp).",
     )
     parser.add_argument(
+        "--tournament-budget",
+        action="store_true",
+        default=False,
+        help=(
+            "Enforce tournament-accurate play_time=240s, init_timeout=10s "
+            "without requiring Linux-only seccomp/setrlimit/UID-drop. "
+            "Portable across Windows and WSL. Use this for the T-30a time "
+            "audit — gets the budget right even when --limit-resources "
+            "is unavailable. Disables isolation; still trusts the bot."
+        ),
+    )
+    parser.add_argument(
         "--parallel",
         type=int,
         default=1,
@@ -460,14 +539,39 @@ def main():
     root_seed = args.seed
 
     # Windows fallback for limit_resources: seccomp + setrlimit(RSS) are Linux-only.
-    if args.limit_resources and sys.platform.startswith("win"):
+    if args.limit_resources and sys.platform.startswith("win") and not args.tournament_budget:
         print(
             "[paired_runner] WARNING: --limit-resources requested on Windows; "
             "engine's seccomp/setrlimit path is Linux-only. Falling back to "
-            "--no-limit-resources (play_time=360, init_timeout=20).",
+            "--no-limit-resources (play_time=360, init_timeout=20). "
+            "Consider --tournament-budget for 240s/10s without isolation.",
             flush=True,
         )
         args.limit_resources = False
+
+    # --tournament-budget implies we're NOT using the engine's limit_resources path,
+    # but we still want 240s/10s. The patch applies stubs and then passes
+    # limit_resources=True to play_game so the engine picks the tournament values.
+    # WARNING: only works on fork-based platforms (Linux/WSL). On Windows the
+    # child processes are started via `spawn` and re-import engine modules from
+    # scratch, so the parent's monkey-patches do NOT propagate and every child
+    # crashes on `import resource` before playing a single ply, silently
+    # returning FAILED_INIT TIEs. Guard here rather than produce garbage data.
+    if args.tournament_budget and sys.platform.startswith("win"):
+        print(
+            "[paired_runner] ERROR: --tournament-budget is Linux/WSL only "
+            "(Windows multiprocessing uses spawn, which does not inherit our "
+            "monkey-patches to engine/player_process.py; every child process "
+            "would crash on `import resource`). Re-run under WSL: "
+            "`wsl -- bash -c \"cd /mnt/c/...; python3 tools/paired_runner.py --tournament-budget ...\"` "
+            "or use --no-limit-resources on Windows (360s budget, tournament-inaccurate).",
+            flush=True,
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    if args.tournament_budget:
+        args.limit_resources = False  # effective flag for CLI reporting only
 
     # Resolve output directory.
     if args.out is None:
@@ -501,6 +605,7 @@ def main():
             agent_a,
             agent_b,
             args.limit_resources,
+            args.tournament_budget,
             args.quiet,
         )
         for i in range(n_pairs)

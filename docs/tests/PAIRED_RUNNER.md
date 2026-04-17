@@ -51,6 +51,7 @@ python3 tools/paired_runner.py --agents RattleBot FloorBot --n 20 --seed 0 --no-
 | `--n INT` | (required) | Number of PAIRS; actual matches = `2 * N`. |
 | `--seed INT` | `0` | Root seed. Pair `i` uses `seed + i`. |
 | `--limit-resources` / `--no-limit-resources` | `--limit-resources` | Enable/disable the engine's `limit_resources=True` path. |
+| `--tournament-budget` | off | **Linux/WSL only.** Enforce tournament-accurate `play_time=240s` + `init_timeout=10s` without requiring the Linux-only seccomp/setrlimit/UID-drop stack. Monkey-patches `apply_seccomp` / `drop_priveliges` / `resource.setrlimit` to no-ops, then calls `play_game(limit_resources=True)` so the engine picks the tournament clock values. Propagates only under fork-multiprocessing; refuses to run on Windows (spawn doesn't inherit the parent's patches → every child would crash on `import resource` and produce silent FAILED_INIT TIEs). Use for the T-30a time-audit gate — it measures clock behavior (TIMEOUT / depth / time-remaining), not syscall isolation. |
 | `--parallel INT` | `1` | Worker processes, capped to 8. |
 | `--out PATH` | `3600-agents/matches/batch_TIMESTAMP/` | Output directory. |
 | `--quiet` | off | Redirect per-match engine stdout to `/dev/null` inside workers. |
