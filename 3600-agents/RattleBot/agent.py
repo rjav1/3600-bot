@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Optional, Tuple
 import json
+import math
 import os
 import random
 
@@ -77,6 +78,17 @@ def _load_tuned_weights() -> Optional[np.ndarray]:
     return None
 
 
+# T-20f bug 2: SEARCH-gate saturation guards (V01_LOSS_ANALYSIS). Without
+# these, a single match where `max_mass > 1/3` holds every turn drains
+# ~80 points to −2 misses. The entropy ceiling prevents the gate from
+# firing on a flat belief that just happens to have one slightly-hotter
+# cell, and the consecutive-miss cap prevents death spirals where the
+# belief stays concentrated around a cell we already proved empty.
+SEARCH_GATE_MAX_CONSEC_MISSES: int = 2
+SEARCH_GATE_ENTROPY_CEIL: float = 0.75 * math.log(64.0)  # ~3.122 nats
+SEARCH_GATE_MASS_FLOOR: float = 1.0 / 3.0
+
+
 __all__ = ["PlayerAgent"]
 
 
@@ -102,6 +114,11 @@ class PlayerAgent:
         self._time_mgr: Optional[TimeManager] = None
         self._zobrist: Optional[Zobrist] = None
         self._init_ok: bool = False
+        # T-20f bug 2: count of consecutive failed SEARCHes by US (not
+        # the opponent). Reset on hit or non-SEARCH move. Updated by
+        # observing `board.player_search` at the top of each play().
+        self._consec_search_misses: int = 0
+        self._last_own_move_was_search: bool = False
 
         try:
             if transition_matrix is None:
@@ -160,18 +177,27 @@ class PlayerAgent:
         assert self._heuristic is not None
         assert self._time_mgr is not None
 
+        # T-20f bug 2: observe the outcome of OUR last move via
+        # `board.player_search`. Engine guarantees this reflects our
+        # previous ply (GAME_SPEC §5). Update the consec-miss counter
+        # BEFORE this turn's belief.update so the gate sees fresh state.
+        self._update_consec_search_misses(board)
+
         belief_summary = self._belief.update(board, sensor_data)
         budget_s = self._time_mgr.start_turn(
             board, time_left, belief_summary
         )
-        # SEARCH only when P(rat_in_argmax) > 1/3 (the unconditional
-        # break-even on a +4/-2 bet per GAME_SPEC §2.4). Heuristic in v0.1
-        # is uncalibrated; without this guard the search-gate fires on
-        # near-flat belief because F11/F12 make heuristic leaf-eval
-        # very negative -- see RATTLEBOT_V01_NOTES.md S-1.
-        # T-20b: `time_mgr.start_turn` already reserved `safety_s`; pass
-        # 0.0 to search so we don't double-subtract.
-        if belief_summary.max_mass > (1.0 / 3.0):
+        # T-20f: three-condition SEARCH gate. All must hold.
+        #   (a) max_mass > 1/3  — unconditional +4/-2 break-even
+        #   (b) entropy  < 0.75 * ln(64) ~= 3.12 nats — belief is peaked
+        #   (c) consec misses <= 2 — don't death-spiral on a stale peak
+        # T-20b: time_mgr owns the 0.5 s reserve; pass safety_s=0.0.
+        search_gated = (
+            belief_summary.max_mass > SEARCH_GATE_MASS_FLOOR
+            and belief_summary.entropy < SEARCH_GATE_ENTROPY_CEIL
+            and self._consec_search_misses <= SEARCH_GATE_MAX_CONSEC_MISSES
+        )
+        if search_gated:
             move = self._search.root_search_decision(
                 board,
                 belief_summary,
@@ -189,8 +215,41 @@ class PlayerAgent:
             )
         if move is None or not self._looks_valid(board, move):
             move = self._emergency_fallback(board)
+        # Record whether we're emitting a SEARCH so the next turn's
+        # `_update_consec_search_misses` knows what to compare against.
+        self._last_own_move_was_search = (
+            int(move.move_type) == int(MoveType.SEARCH)
+        )
         self._time_mgr.end_turn(0.0)
         return move
+
+    def _update_consec_search_misses(
+        self, board: board_mod.Board
+    ) -> None:
+        """Reconcile `_consec_search_misses` with engine state.
+
+        `board.player_search = (loc, result)` reflects our last ply.
+        Rules:
+          - If our last move was a SEARCH (we set the flag at end of
+            play()) AND `result is False`: increment counter.
+          - Else (hit, or we didn't search last turn): reset to 0.
+        """
+        if not self._last_own_move_was_search:
+            self._consec_search_misses = 0
+            return
+        try:
+            loc, hit = board.player_search
+        except Exception:
+            self._consec_search_misses = 0
+            return
+        if loc is None:
+            # Engine lost track; reset conservatively.
+            self._consec_search_misses = 0
+            return
+        if hit:
+            self._consec_search_misses = 0
+        else:
+            self._consec_search_misses += 1
 
     # ------------------------------------------------------------------
     # Emergency fallback (duplicated from FloorBot per D-006 isolation)

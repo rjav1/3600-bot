@@ -1,4 +1,4 @@
-"""Ordered move generation for RattleBot v0.1.
+"""Ordered move generation for RattleBot v0.2.
 
 Per BOT_STRATEGY.md v1.1 §2.f / §3.5. Wraps `Board.get_valid_moves` and
 applies the ordering stack:
@@ -9,6 +9,12 @@ applies the ordering stack:
     5. immediate point delta
 v1.1 invariant (D-011 item 2): with exclude_search=True (interior nodes),
 the returned list contains NO SEARCH moves.
+
+v0.2 T-20f (V01_LOSS_ANALYSIS bug 1): k=1 CARPET rolls are strictly
+dominated (−1 point with no upside) yet were observed as 42 % of
+RattleBot's carpet moves. We now drop k=1 CARPET moves from the returned
+list UNLESS no non-k=1 legal move exists — in which case k=1 is kept as
+the only way out (very rare; engine edge case).
 """
 
 from __future__ import annotations
@@ -50,6 +56,13 @@ def _sort_key(move: Move, history: Optional[Dict[MoveKey, int]]):
     return (type_bucket, -hist, -immediate_delta(move))
 
 
+def _is_k1_carpet(m: Move) -> bool:
+    return (
+        int(m.move_type) == int(MoveType.CARPET)
+        and m.roll_length < 2
+    )
+
+
 def ordered_moves(
     board,
     hash_move: Optional[MoveKey] = None,
@@ -60,6 +73,13 @@ def ordered_moves(
     legal = board.get_valid_moves(exclude_search=exclude_search)
     if not legal:
         return legal
+
+    # T-20f bug 1: drop strictly-dominated k=1 CARPET unless it's the only
+    # option. This is a sound pruning because k=1 is worth −1 point and
+    # offers no downstream advantage the other legal moves lack.
+    non_k1 = [m for m in legal if not _is_k1_carpet(m)]
+    if non_k1:
+        legal = non_k1
 
     legal.sort(key=lambda m: _sort_key(m, history))
 
