@@ -49,7 +49,7 @@ Append-only. Each entry: ID, date, decision, rationale, dismissed alternatives, 
 - Beam search / null-move pruning / magic bitboards — SYN §B16, no sliding pieces, no Zugzwang-valid positions.
 - MCTS rewrite as late-stage pivot — §8 non-goal unless v0.5 is insufficient at T − 12 h.
 
-**Contrarian dissent:** Strategy-contrarian red-team is pending per PIPELINE.md Phase 1 exit. D-004 is committed provisionally; orchestrator will re-arbitrate after contrarian review.
+**Contrarian dissent (2026-04-16, strategy-contrarian, CONTRARIAN_STRATEGY.md):** **ENDORSE** the α-β+ID+TT backbone and belief-as-leaf-potential direction. **AMEND** the calibration: (1) the stated 100 μs leaf budget + "depth 6–8 pure Python" claim is arithmetically inconsistent — at 10 k leaves/sec the typical-ordered depth-8 tree (~118 k nodes) overruns a 6 s/move budget; realistic pure-Python depth is 5–6, with numba flip needed for 7–8. (2) γ_info / γ_reset are inverted vs HEUR §H.3 F15 (correct: γ_info=0.5, γ_reset=0.3). (3) CMA-ES tuning timeline (BOT §2.c "300 evaluations") contradicts HEUR §F.2 (100 evals × 50 matches = 5000 matches, 42–83 h wall-clock under tournament-time matches; architect's 14 h v0.2 window is insufficient). Contrarian recommends Bayesian optimization as default v0.2 tuner; CMA-ES demoted to v0.3+ stretch. No reject of core decision.
 
 ---
 
@@ -64,7 +64,7 @@ Append-only. Each entry: ID, date, decision, rationale, dismissed alternatives, 
 - Passing full 64-dim belief to every leaf vs. summary stats — adds per-call copy cost; summary stats cover F11/F12 needs at O(1).
 - log-space HMM — unnecessary at 64 states with per-turn renorm (HMM §A.3).
 
-**Contrarian dissent:** Pending.
+**Contrarian dissent (2026-04-16, strategy-contrarian, CONTRARIAN_STRATEGY.md):** **AMEND** two interface details before dev wave. (1) `BeliefSummary.top8` is dead freight — at mid-game entropy belief concentrates in < 5 cells (top8 over-wide); late-game after reset it spreads > 20 cells (top8 under-wide). Drop `top8`; leaves can sort 64 floats in ~5 μs on demand. (2) Add an invariant assertion `assert all(m.move_type != MoveType.SEARCH for m in ordered_moves)` inside `search._alphabeta` — the root-only-SEARCH contract is load-bearing (SPEC §2.4; HEUR §E.6; SYN R-SEARCH-01); silent breakage would mis-value every SEARCH-containing subtree. (3) Raise time safety 0.2 s → 0.5 s (matches `check_win` tie band, absorbs GC/JIT pauses per CON §E-2). (4) HMM update pipeline has a first-turn bug: running predict→opp-search→predict unconditionally at turn_count=0 for player A applies 2 predicts when only 1 rat move has happened. Fix with a turn_count guard or by pre-applying one predict in `__init__`. Module decomposition shape itself is correct and dev can proceed along the §3 partition once these fixes land.
 
 ---
 
@@ -80,5 +80,5 @@ Append-only. Each entry: ID, date, decision, rationale, dismissed alternatives, 
 - No FloorBot (SYN §C1 primary docs' position): leaves the floor uncovered; if RattleBot slips we get a 0 % grade. Rejected — the cost of parallel FloorBot is small and the insurance value is large.
 - Opponent-exploit track as v0.5 optional (HEUR §D.3 position): underweights the highest-leverage alternative. Compromise is "scheduled but not blocking" — lets us absorb scrimmage evidence without committing dev-search/dev-heuristic.
 
-**Contrarian dissent:** Pending.
+**Contrarian dissent (2026-04-16, strategy-contrarian, CONTRARIAN_STRATEGY.md):** **AMEND** four gate-condition details — the FloorBot/promotion structure itself is endorsed (CON §C-1 insurance argument is correct; D-007 shipped is strong). (1) Gate condition 1 (≥ 60 % paired / 100 matches) has a marginal 95 % CI (≈ 54–66 %) — promote to ≥ 65 % OR expand to ≥ 58 % / 200 matches. (2) T-LIVE-1 choice of George is wrong opponent for the live gate — FloorBot already beats George, so "RattleBot beats George 3-of-5" doesn't prove the promotion case. Change to `3-of-5 vs George AND ≥ 1 non-loss in 3 vs Albert`. (3) Gate condition 4 "auditor sign-off" is undefined — turns a 4-condition gate into a 3-condition gate + subjective veto; concretize as "AUDIT_V03.md exists and enumerates T-HMM-1/2, T-SRCH-1/2/3, T-HEUR-1/2 pass/fail with zero open severity-Critical findings and FloorBot fallback verified in agent.py try/except". (4) Gate condition 2 (≥ 200 crashless) endorsed as-is. Opp-exploit pre-schedule at T-36 h endorsed, with added precondition: blocked on ≥ 10 live scrimmage matches existing before dev-opponent-model work begins (otherwise modeling is guesswork per CON §G-1 revised cost).
 

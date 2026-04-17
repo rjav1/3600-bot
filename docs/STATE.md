@@ -1,7 +1,7 @@
 # STATE — Rolling Snapshot
 
-**Last updated:** 2026-04-16 (tester-live BLOCKED on first upload — account has no team; see LIVE-001)
-**Current phase:** Phase 1 — Strategy blueprint (BOT_STRATEGY.md v1.0 delivered; awaiting strategy-contrarian red-team before Phase 2/3)
+**Last updated:** 2026-04-16 (strategy-contrarian delivered CONTRARIAN_STRATEGY.md red-teaming BOT_STRATEGY.md v1.0; 7 MUST-CHANGE items flagged for orchestrator before dev wave. Tester-live BLOCKED on first upload — account has no team; see LIVE-001)
+**Current phase:** Phase 1 — Strategy blueprint (BOT_STRATEGY.md v1.0 + CONTRARIAN_STRATEGY.md v1.0 delivered; orchestrator arbitration pending before dev wave starts)
 **Deadline:** 2026-04-19 23:59
 
 ## Active agents
@@ -16,6 +16,7 @@
 | contrarian-scope     | contrarian-scope     | CONTRARIAN_SCOPE.md     | completed |
 | research-synthesizer | research-synthesizer | SYNTHESIS.md            | completed |
 | strategy-architect   | strategy-architect   | BOT_STRATEGY.md v1.0    | completed |
+| strategy-contrarian  | strategy-contrarian  | CONTRARIAN_STRATEGY.md  | completed |
 
 ## Recent decisions
 
@@ -36,16 +37,19 @@
 - **D-006** (2026-04-16): **FloorBot/primary relationship: FloorBot is the active live submission from T − 60 h. RattleBot is promoted to live only after passing a 4-condition gate (≥ 60 % paired vs FloorBot, ≥ 200 matches without crash/timeout, T-LIVE-1 pass, auditor sign-off). RattleBot embeds FloorBot's `emergency_fallback` as a try/except catch-all at every `play()` call.** Opponent-specific exploit (CON §C-6) pre-scheduled at T − 36 h as a parallel track, not a blocking path. See BOT_STRATEGY.md §6 and §2.j.
 - **D-007** (2026-04-16): **FloorBot v1 shipped at `3600-agents/FloorBot/`** per contrarian recommendation #3 and D-006 — 5-priority reactive policy (carpet ≥ 2 → extend/start prime → plain toward open area → any valid → random-fallback), ≤ 180 LOC, zero lookahead, entire `play` body wrapped in try/except. 50 local matches each side vs Yolanda: **100/100 wins, 0 crashes, 0 timeouts, 0 invalid moves**. Per-move wall-time p99 = 0.034 ms, max = 0.061 ms (3 orders of magnitude under the 50 ms target). Design philosophy, decision rules, weaknesses, and activation criteria live in `docs/plan/FLOOR_BOT.md`. This is our 70 %-tier insurance submission and the baseline gate for RattleBot promotion.
 - **LIVE-001** (2026-04-16): **First bytefight.org upload attempt BLOCKED** — account is logged in as `Rjav` / `rjavid3@gatech.edu` (not `rahiljav@gmail.com` as CLAUDE.md suggests) but is **not on a team**. Profile says "Team & Competition History: Coming soon..."; competition sidebar shows Create/Join Team instead of a team page. No upload/submit UI is reachable until a team exists. FloorBot.zip was built and verified (depth-1 layout `FloorBot/agent.py` + `FloorBot/__init__.py`, ~3 KB) and staged at `C:\Users\rahil\AppData\Local\Temp\FloorBot.zip`. Paused without creating a team because team name is public-facing and partner-submission protocol (R-PARTNER-01) is unresolved. Trip report: `docs/tests/LIVE_UPLOAD_001.md`. Pinging team-lead for go/no-go on team creation.
+- **C-STRAT-001** (2026-04-16): Strategy red-team delivered in `docs/plan/CONTRARIAN_STRATEGY.md`. Verdict on D-004 = **endorse**, D-005 = **amend** (BeliefSummary `top8` redundant; add SEARCH-not-in-tree assertion; drop `top8`), D-006 = **amend** (4 gate fixes). 7 MUST-CHANGE items flagged for orchestrator arbitration before dev wave: (1) tighten gate-1 sample size/threshold; (2) change T-LIVE-1 mix to include Albert; (3) define "auditor sign-off" concretely; (4) add SEARCH-not-in-tree invariant assertion; (5) reconcile 100 μs leaf budget with depth projections (pure-Python caps at d=5–6 not 6–8); (6) fix first-turn predict-count bug in HMM pipeline; (7) add rat-captures/match instrumentation to tester-local. 6 SHOULD-CHANGE items (γ inversion, demote CMA-ES to stretch and use Bayesian opt, drop top8, raise time safety 0.2 s→0.5 s, move F5/F7 into v0.1 scope, gate opp-model spawn on scrimmage data). 10+ endorsements recorded. Contrarian grade-probability estimates: P(≥70 %)≈0.91, P(≥80 %)≈0.55, P(≥90 %)≈0.25 (within architect's stated CIs). No pipeline halt; orchestrator arbitration required before T-12/T-13/T-14/T-15 spawn.
 
 ## Blockers
 
-None pipeline-halting. Phase 2 is blocked pending strategy-contrarian red-team of `docs/plan/BOT_STRATEGY.md` v1.0 — orchestrator should spawn contrarian as next wave. Open risk-register items with owners in BOT_STRATEGY.md §9.
+Phase 2 is blocked pending orchestrator arbitration of CONTRARIAN_STRATEGY.md's 7 MUST-CHANGE items against BOT_STRATEGY.md v1.0. Once arbitration is recorded in DECISIONS.md (amendments or rejections to each), dev wave T-12..T-17 can spawn per BOT §10. Open risk-register items with owners in BOT_STRATEGY.md §9.
 
 ## Open loops
 
-- Agent folder `3600-agents/RattleBot/` not created yet (BOT_STRATEGY.md §3 commits the name; dev-integrator T-12 task scaffolds it).
+- Agent folder `3600-agents/RattleBot/` not created yet (BOT_STRATEGY.md §3 commits the name; dev-integrator T-12 task scaffolds it, blocked on contrarian arbitration).
+- **7 MUST-CHANGE items from CONTRARIAN_STRATEGY.md §J** pending orchestrator arbitration. Until addressed, dev wave (T-12..T-17) should NOT spawn.
+- 6 SHOULD-CHANGE items from CONTRARIAN_STRATEGY.md §J are mid-flight acceptable; track in audit for v0.2/v0.3 application.
 - FloorBot (`3600-agents/FloorBot/`) built per D-007. Ready to be activated on bytefight.org as the floor submission from T − 60 h per BOT_STRATEGY.md §6.
-- Test infrastructure: Tester-Local paired-match batch runner is pipeline task T-17 (blocks ELO-gate measurements).
+- Test infrastructure: Tester-Local paired-match batch runner is pipeline task T-17 (blocks ELO-gate measurements); contrarian recommends parallel implementation with `n_workers = cpu_count()-1`.
 - bytefight.org credentials / session — Tester-Live needs to confirm the user is logged in on Chrome before uploads.
 - R-PARTNER-01 (BOT_STRATEGY.md §9): orchestrator must confirm partner-lock-in protocol with user (rahiljav@gmail.com) before first live upload.
 
