@@ -1,7 +1,7 @@
 # STATE — Rolling Snapshot
 
-**Last updated:** 2026-04-17 (strategy-architect ratified BOT_STRATEGY.md v1.1 integrating all 11 contrarian items. Dev wave unblocked. D-008/D-009/D-010/D-011 recorded.)
-**Current phase:** **Phase 1 COMPLETE.** BOT_STRATEGY.md v1.1 is the ratified plan. Phase 2 (Architecture + module specs) is implicit in BOT_STRATEGY.md §3; Phase 3 (dev wave T-12 → T-18) can spawn.
+**Last updated:** 2026-04-16 (dev-integrator landed T-12 RattleBot scaffold + fully implemented types.py; smoke test vs Yolanda passes).
+**Current phase:** **Phase 3 IN PROGRESS.** BOT_STRATEGY.md v1.1 is the ratified plan. Phase 3 dev wave opened: T-12 complete; T-13/T-14/T-15 (dev-hmm/dev-search/dev-heuristic) now unblocked by the interface lock-in at `3600-agents/RattleBot/types.py`.
 **Deadline:** 2026-04-19 23:59
 
 ## Active agents
@@ -18,6 +18,7 @@
 | strategy-architect   | strategy-architect   | BOT_STRATEGY.md v1.0    | completed |
 | strategy-contrarian  | strategy-contrarian  | CONTRARIAN_STRATEGY.md  | completed |
 | strategy-architect   | strategy-architect   | BOT_STRATEGY.md v1.1    | completed |
+| dev-integrator       | dev-integrator       | T-12 RattleBot scaffold | completed |
 
 ## Recent decisions
 
@@ -45,6 +46,7 @@
 - **D-009** (2026-04-17): Bayesian optimization replaces CMA-ES as v0.2 weight-tuning default (25 trials × 50 paired matches, parallelized). CMA-ES demoted to v0.3+ stretch. Hand-tuned `w_init` is the ultimate fallback.
 - **D-010** (2026-04-17): RattleBot promotion gate tightened — 65 %/100 OR 58 %/200 paired + Albert scrimmage added to T-LIVE-1 + concrete AUDIT_V03.md sign-off. Supersedes D-006's gate conditions.
 - **D-011** (2026-04-17): Five technical fixes — HMM first-turn guard, SEARCH-not-in-tree invariant, drop `top8`, time safety 0.5 s, γ_info=0.5/γ_reset=0.3.
+- **T-12** (2026-04-16): **RattleBot scaffold + `types.py` landed at `3600-agents/RattleBot/`** by dev-integrator. Layout matches BOT_STRATEGY.md v1.1 §3 (agent / rat_belief / search / heuristic / move_gen / time_mgr / zobrist / types). `types.py` fully implemented: `BeliefSummary` (no `top8` per D-011), `TTEntry`, `Undo` (stub), `MoveKey`, plus `TT_FLAG_EXACT/LOWER/UPPER` constants — this is the interface lock-in for dev-hmm/dev-search/dev-heuristic. All other modules are signatures + docstrings + `NotImplementedError('TBD by dev-<role>')`. `agent.py` is a random-valid-move placeholder with embedded `_emergency_fallback` per D-006. Smoke test: `python engine/run_local_agents.py RattleBot Yolanda` → TIE 6-6 by POINTS, 80 rounds, 3.66 s elapsed, no ImportError / no InvalidMove / no crashes. Scaffold total = 561 LOC (slightly over the 400 target; excess is in types.py load-bearing interface docstrings).
 
 ## Blockers
 
@@ -52,7 +54,7 @@
 
 ## Open loops
 
-- Agent folder `3600-agents/RattleBot/` not created yet — dev-integrator T-12 is now unblocked.
+- Agent folder `3600-agents/RattleBot/` shipped at T-12 (scaffold + `types.py` only). Real logic lands in T-13 (dev-hmm: `rat_belief.py`) / T-14 (dev-search: `search.py` + `zobrist.py`) / T-15 (dev-heuristic: `heuristic.py`) / T-18 (dev-integrator: `agent.py` wiring).
 - Test infrastructure: Tester-Local paired-match batch runner (T-17) — parallelization with `n_workers = cpu_count()−1` and per-match rat-capture logging are v1.1 requirements.
 - FloorBot (`3600-agents/FloorBot/`) built per D-007. Live upload blocked on LIVE-001 (team creation); ready to activate once the team exists.
 - bytefight.org credentials / session — Tester-Live needs to confirm the user is logged in on Chrome before uploads.
