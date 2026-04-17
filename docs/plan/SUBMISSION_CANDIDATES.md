@@ -70,15 +70,49 @@ OUT="C:/Users/rahil/AppData/Local/Temp/submissions/RattleBot_v02_notuning_${TS}.
 
 ### 2.3 RattleBot_v02_tuned — to build after T-20d-RUN1 completes
 
+**CRITICAL packaging detail (from dev-heuristic, 2026-04-17):** The BO run writes winning weights to `3600-agents/RattleBot/weights_v02.json`, but `agent.py::_load_tuned_weights` (lines 45-63) only auto-loads a sibling file named **literally `weights.json`**. So for this candidate we must **rename** `weights_v02.json` → `weights.json` inside the zip, right next to `agent.py`. If it stays named `weights_v02.json` the agent silently falls back to hard-coded `W_INIT` — the submission would be v02_notuning masquerading as v02_tuned.
+
 ```bash
-# Requires: BO run complete, weights.json updated on main, tests pass
-# Expected commit: whichever lands after weights.json refresh
-COMMIT="<post-T-20d>"  # update after T-20d-RUN1 (task #44) lands
+# Requires: BO run complete (weights_v02.json written), T-20f fixes merged, tests pass.
+# Expected commit range: post-task-#44 completion on main.
+COMMIT="<post-T-20d>"                                  # update after task #44 lands
+WEIGHTS_SRC="3600-agents/RattleBot/weights_v02.json"   # what BO writes
 TS=$(date +%Y%m%d_%H%M)
 OUT="C:/Users/rahil/AppData/Local/Temp/submissions/RattleBot_v02_tuned_${TS}.zip"
-# Same recipe as §2.1; weights.json will automatically be included since it's tracked in the source tree.
-# Expect zip size ~22-25 KB (v01 is 20.7 KB).
+
+python -c "
+import zipfile, subprocess
+commit = '${COMMIT}'
+out = r'${OUT}'
+files = subprocess.check_output(['git','ls-tree','-r','--name-only', commit, '3600-agents/RattleBot/'], text=True).strip().split('\n')
+files = [f for f in files if '/tests/' not in f and '__pycache__' not in f and f.endswith('.py')]
+with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+    for f in files:
+        arcname = f.replace('3600-agents/','',1)
+        z.writestr(arcname, subprocess.check_output(['git','show', f'{commit}:{f}']))
+    # Inject weights.json — rename from weights_v02.json.
+    w = subprocess.check_output(['git','show', f'{commit}:${WEIGHTS_SRC}'])
+    z.writestr('RattleBot/weights.json', w)   # <-- LITERAL name matters
+"
+# Expect zip size ~21-25 KB (v01 is 20.7 KB; weights.json adds ~300 B).
 ```
+
+**Verification after build (mandatory before upload):**
+
+```bash
+python -c "
+import zipfile, tempfile, subprocess, os
+zpath = r'${OUT}'
+tmp = tempfile.mkdtemp()
+with zipfile.ZipFile(zpath) as z: z.extractall(tmp)
+assert os.path.isfile(os.path.join(tmp,'RattleBot','weights.json')), 'weights.json missing at zip root'
+env = dict(os.environ, PYTHONPATH=f'{tmp};engine;3600-agents')
+out = subprocess.check_output(['python','-c','from RattleBot.agent import _load_tuned_weights; w=_load_tuned_weights(); assert w is not None, \"fell back to None — weights not loaded\"; print(\"weights shape:\", w.shape, \"first 3:\", w[:3].tolist())'], env=env, text=True)
+print(out)
+"
+```
+
+Expected stdout contains `weights shape:` and a non-None array of N_FEATURES floats. Anything else = broken zip, DO NOT upload.
 
 ## 3. Pre-upload validation checklist (per candidate)
 
