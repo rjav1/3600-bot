@@ -14,6 +14,13 @@ Endpoints (server.bytefight.org):
   PATCH  /api/v1/team/{teamUuid}/current-submission                      # set active submission
   GET    /api/v1/public/game-match?competitionSlug=...&teamUuid=...      # list matches (poll here)
   POST   /api/v1/game-match                                              # create scrimmage [TURNSTILE]
+  GET    /files/{fileUuid}?exp=...&sig=...                               # signed PGN download (no auth)
+
+Replay fetch:
+  Per-match PGN ("match.json") is not served from a JSON API. The signed `/files/...`
+  URL is embedded as an `<a href download>` link inside the server-rendered HTML at
+  `https://bytefight.org/match/{matchUuid}`. `get_replay()` scrapes the page, follows
+  the signed URL, and returns the parsed PGN (turn-indexed parallel arrays).
 
 Auth:
   - Public endpoints (`/api/v1/public/*`, `/api/v1/ping`) are fully anonymous. This covers
@@ -40,6 +47,7 @@ Usage (CLI):
     python tools/bytefight_client.py resolve-opponent --name Carrie
     python tools/bytefight_client.py upload --zip PATH [--name X] [--auto-set]
     python tools/bytefight_client.py scrimmage --opponent Carrie [--count 1]
+    python tools/bytefight_client.py replay --match-uuid UUID [--save PATH]
 
 All write operations accept --dry-run to print the intended request without
 sending it.
@@ -56,6 +64,24 @@ from typing import Any
 from urllib.parse import urljoin
 
 import requests
+
+
+def _load_dotenv() -> None:
+    """Auto-load KEY=VALUE pairs from repo-root .env into os.environ (no override)."""
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv()
 
 # Supabase auth auto-refresh. Local-import-safe if run as script or as package.
 try:
@@ -84,7 +110,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SESSION_PATH_DEFAULT = REPO_ROOT / "tools" / "bytefight_session.json"
 
 API_BASE = "https://server.bytefight.org"
+SITE_BASE = "https://bytefight.org"
 COMPETITION_SLUG = "cs3600_sp2026"
+
+# Match result codes from the match-page JS bundle (entry 7 of view_results HAR).
+# `let P=function(e){return e[e.TEAM_A_WIN=0]="TEAM_A_WIN",e[e.TEAM_B_WIN=1]="TEAM_B_WIN",e[e.DRAW=2]="DRAW",e}({});`
+RESULT_CODES = {0: "TEAM_A_WIN", 1: "TEAM_B_WIN", 2: "DRAW"}
 DEFAULT_TEAM_UUID = "81513423-e93e-4fe5-8a2f-cc0423ccb953"  # Team 15 — override via env/session/flag
 # Extracted from https://bytefight.org — widget site key (public by design).
 TURNSTILE_SITE_KEY = "0x4AAAAAACq7wjGZKYGP8Yr0"
@@ -373,6 +404,105 @@ class BytefightClient:
                 break
         return None
 
+    def get_replay(self, match_uuid: str) -> dict:
+        """Fetch per-turn replay (PGN) for a finished match.
+
+        The signed `server.bytefight.org/files/<fileUuid>?exp&sig` download URL is not
+        served by any JSON API — it is embedded server-side in the HTML at
+        `bytefight.org/match/<matchUuid>`. We scrape it, follow the link, parse JSON.
+
+        Returns a dict with:
+          - `match_uuid`: the input uuid
+          - `signed_url`: the resolved `/files/...` URL we downloaded from
+          - `result_code`: 0/1/2
+          - `result`: "TEAM_A_WIN" | "TEAM_B_WIN" | "DRAW" (derived from `result_code`)
+          - `reason`: str (WinReason — e.g. "max_turns", "illegal_move", "out_of_time")
+          - `turn_count`: int
+          - `final_score`: {"a": int, "b": int}
+          - `pgn`: the full raw PGN (parallel arrays keyed by turn index: a_pos, b_pos,
+            a_points, b_points, a_turns_left, b_turns_left, a_time_left, b_time_left,
+            rat_position_history, rat_caught, left_behind, new_carpets, blocked_positions,
+            errlog_a, errlog_b, ...)
+
+        Raises BytefightError if the match page doesn't embed a signed URL (e.g. the
+        match is still running, 404, or the page layout changed).
+        """
+        import html as _html
+        import re
+
+        # Match page is a public anonymous Next.js SSR doc — no Authorization header.
+        page_url = f"{SITE_BASE}/match/{match_uuid}"
+        self._rate_limit()
+        # Bypass the _request auth-refresh flow; this host is bytefight.org not the API.
+        r = requests.get(
+            page_url,
+            headers={
+                "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "accept-language": BROWSER_HEADERS["accept-language"],
+                "user-agent": DEFAULT_USER_AGENT,
+            },
+            timeout=DEFAULT_TIMEOUT_S,
+        )
+        if r.status_code == 404:
+            raise BytefightError(f"match page 404 for {match_uuid} — does it exist?")
+        r.raise_for_status()
+        body = r.text
+
+        # Extract the signed `/files/<uuid>?exp=...&sig=...` URL. Appears twice in the
+        # HTML: once HTML-entity-encoded (&amp;) in the <a href>, once Unicode-escaped
+        # (\u0026) in the RSC stream. Either works; pick the href form and decode.
+        m = re.search(
+            r'href="(https://server\.bytefight\.org/files/[a-f0-9-]+\?[^"]+)"',
+            body,
+        )
+        if not m:
+            # Fallback: look for the \u0026 form in the RSC stream
+            m = re.search(
+                r'"(https://server\.bytefight\.org/files/[a-f0-9-]+\?exp=\d+\\u0026sig=[A-Za-z0-9_-]+)"',
+                body,
+            )
+        if not m:
+            raise BytefightError(
+                f"no /files/ signed URL found in match page for {match_uuid}. "
+                "Match may still be running, failed to produce a PGN, or page layout changed."
+            )
+        signed_url = _html.unescape(m.group(1)).replace("\\u0026", "&")
+
+        # Follow the signed URL — also public, no auth needed.
+        self._rate_limit()
+        r2 = requests.get(
+            signed_url,
+            headers={
+                "accept": "application/json,*/*;q=0.8",
+                "accept-language": BROWSER_HEADERS["accept-language"],
+                "referer": f"{SITE_BASE}/",
+                "user-agent": DEFAULT_USER_AGENT,
+            },
+            timeout=DEFAULT_TIMEOUT_S,
+        )
+        if r2.status_code == 403:
+            raise BytefightError(
+                f"signed URL returned 403 — the `sig` may have expired. Re-fetch the match page "
+                "to get a fresh signature."
+            )
+        r2.raise_for_status()
+        pgn = r2.json()
+
+        result_code = pgn.get("result")
+        turn_count = pgn.get("turn_count", 0)
+        a_points = (pgn.get("a_points") or [0])
+        b_points = (pgn.get("b_points") or [0])
+        return {
+            "match_uuid": match_uuid,
+            "signed_url": signed_url,
+            "result_code": result_code,
+            "result": RESULT_CODES.get(result_code, f"UNKNOWN({result_code})"),
+            "reason": pgn.get("reason"),
+            "turn_count": turn_count,
+            "final_score": {"a": a_points[-1], "b": b_points[-1]},
+            "pgn": pgn,
+        }
+
     def list_leaderboard(self, ladder: str = "ranked") -> list[dict]:
         resp = self._request("GET", f"/api/v1/public/leaderboard/{self.competition_slug}/{ladder}")
         resp.raise_for_status()
@@ -556,6 +686,11 @@ def main(argv: list[str] | None = None) -> int:
     po.add_argument("--interval", type=float, default=10.0)
     po.add_argument("--timeout", type=float, default=1200.0)
 
+    rp = sub.add_parser("replay", help="fetch per-turn PGN for a finished match")
+    rp.add_argument("--match-uuid", required=True)
+    rp.add_argument("--save", help="if set, write full PGN JSON to this path")
+    rp.add_argument("--full", action="store_true", help="print full PGN to stdout (otherwise just a summary)")
+
     args = p.parse_args(argv)
     client = BytefightClient(
         session_path=Path(args.session_path),
@@ -630,6 +765,30 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "poll":
             m = client.poll_match(args.match_uuid, interval_s=args.interval, timeout_s=args.timeout)
             print(json.dumps(m, indent=2))
+        elif args.cmd == "replay":
+            rep = client.get_replay(args.match_uuid)
+            if args.save:
+                save_path = Path(args.save)
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                save_path.write_text(json.dumps(rep["pgn"], indent=2), encoding="utf-8")
+                print(f"wrote {save_path}")
+            if args.full:
+                print(json.dumps(rep, indent=2))
+            else:
+                pgn = rep["pgn"]
+                summary = {
+                    "match_uuid": rep["match_uuid"],
+                    "result": rep["result"],
+                    "reason": rep["reason"],
+                    "turn_count": rep["turn_count"],
+                    "final_score": rep["final_score"],
+                    "blocked_positions": pgn.get("blocked_positions"),
+                    "signed_url": rep["signed_url"],
+                    "pgn_keys": sorted(pgn.keys()),
+                    "errlog_a_len": len((pgn.get("errlog_a") or "").strip()),
+                    "errlog_b_len": len((pgn.get("errlog_b") or "").strip()),
+                }
+                print(json.dumps(summary, indent=2))
     except TurnstileRequired as e:
         print(f"[turnstile] {e}", file=sys.stderr)
         return 2

@@ -19,6 +19,8 @@ Pure-Python client for the tournament API. Replaces Chrome MCP / manual-click UI
 | POST   | /api/v1/submission/team/{teamUuid}                      | Bearer + Turnstile | upload zip (multipart: description, file, isAutoSet) |
 | PATCH  | /api/v1/team/{teamUuid}/current-submission              | Bearer | set active submission (JSON: `{submissionUuid}`) |
 | POST   | /api/v1/game-match                                      | Bearer + Turnstile | create scrimmage (JSON: `{competitionSlug, ladder:"scrimmage", teamAUuid, teamBUuid, count, matchSettings:{map:null}}`) |
+| GET    | https://bytefight.org/match/{matchUuid}                 | none   | HTML match page — embeds signed PGN URL (scrape via `get_replay`) |
+| GET    | https://server.bytefight.org/files/{fileUuid}?exp&sig   | none   | signed PGN download (sig expires ~1hr after page render) |
 
 **Turnstile site key:** `0x4AAAAAACq7wjGZKYGP8Yr0` (bytefight.org). Page URL: `https://bytefight.org/`.
 
@@ -91,6 +93,9 @@ python tools/bytefight_client.py list-leaderboard
 python tools/bytefight_client.py resolve-opponent --name Carrie    # -> UUID
 python tools/bytefight_client.py get-match --match-uuid <uuid>
 python tools/bytefight_client.py poll --match-uuid <uuid> --interval 10 --timeout 1200
+python tools/bytefight_client.py replay --match-uuid <uuid>                  # summary (result, score, turn count, PGN key list)
+python tools/bytefight_client.py replay --match-uuid <uuid> --save out.json  # write full PGN JSON to disk
+python tools/bytefight_client.py replay --match-uuid <uuid> --full           # print the full PGN JSON to stdout
 
 # Requires Bearer (no Turnstile)
 python tools/bytefight_client.py my-team
@@ -119,6 +124,11 @@ matches = c.start_scrimmage("Carrie", count=3)
 for m in matches:
     result = c.poll_match(m["uuid"])
     print(m["uuid"], result["status"])
+    if result["status"] in ("team_a_win", "team_b_win", "draw"):
+        rep = c.get_replay(m["uuid"])
+        print(f"  -> {rep['result']} by {rep['reason']} in {rep['turn_count']} turns")
+        print(f"     final: A={rep['final_score']['a']}  B={rep['final_score']['b']}")
+        # rep["pgn"] is the full per-turn log — feed to loss-forensics
 ```
 
 ## Response schemas (observed)
@@ -143,7 +153,38 @@ for m in matches:
  "timestampsDto": {...}}
 ```
 
-**Replay**: `GET https://server.bytefight.org/files/<uuid>?exp=<unix>&sig=<signed>` returns the full match JSON. The signed URL is fetched (via Bearer) from a per-match endpoint that wasn't captured — likely `GET /api/v1/public/game-match/{uuid}` or `GET /api/v1/game-match/{uuid}`. Not implemented yet; extend the client once observed.
+**Replay** (implemented via `get_replay(match_uuid)`):
+Per-match PGN is NOT served from a JSON API. The signed `/files/<fileUuid>?exp=...&sig=...`
+download URL is embedded as an `<a href download>` link inside the server-rendered HTML
+at `https://bytefight.org/match/{matchUuid}`. Both the match page and the signed URL are
+fully public (no Bearer, no Turnstile). `get_replay()`:
+1. `GET https://bytefight.org/match/{matchUuid}` — public Next.js SSR HTML page.
+2. Regex-extract `href="https://server.bytefight.org/files/...?exp=...&amp;sig=..."`,
+   unescape HTML entities.
+3. `GET` the signed URL → returns `match.json` (schema below).
+4. Return `{match_uuid, signed_url, result, result_code, reason, turn_count, final_score, pgn}`.
+
+`sig` is an HMAC over `(fileUuid, exp)` with a ~1hr expiry bound to the page render. If a
+cached `signed_url` returns 403, re-call `get_replay()` — the method always re-scrapes for
+a fresh signature.
+
+PGN schema (parallel arrays, index = turn; turn 0 is initial state):
+```
+a_pos[T]                   [[x,y], ...]       — worker A position per turn (length turn_count+1)
+b_pos[T]                   [[x,y], ...]       — worker B position
+a_points[T], b_points[T]   [int, ...]         — running scores
+a_turns_left[T], b_turns_left[T]              — turns remaining
+a_time_left[T], b_time_left[T]                — seconds remaining
+rat_position_history[T]    [[x,y], ...]       — rat cell per turn (ground truth; bots never see this)
+rat_caught[T]              [bool, ...]
+left_behind[T]             ["prime"|"none"|...]  — what the mover dropped this turn
+new_carpets[T]             [[[x,y], ...], ...]    — cells converted to CARPET this turn
+blocked_positions          [[x,y], ...]        — per-game static blocks (not per-turn)
+turn_count                 int
+result                     0|1|2 (TEAM_A_WIN|TEAM_B_WIN|DRAW)
+reason                     WinReason str (e.g. "POINTS", "ILLEGAL_MOVE", "OUT_OF_TIME")
+errlog_a, errlog_b         str — stderr captured from each agent's sandboxed process
+```
 
 ## Refreshing auth
 
