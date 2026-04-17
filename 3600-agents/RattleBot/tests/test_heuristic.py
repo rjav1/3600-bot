@@ -931,78 +931,98 @@ def test_f22_feature_slot_wired_correctly():
     assert feats[16] == 4.0
 
 
-def test_f10_counts_primed_carpet_adjacent_to_opp():
-    """T-40-EXPLOIT-2 F10 base: count PRIMED/CARPET cells cardinal-
-    adjacent to opp's worker."""
-    from RattleBot.heuristic import _opp_mobility_denied_plus_adjacency
-    board = _fresh_board(
-        player_pos=(0, 0), opp_pos=(5, 5), blockers=False
-    )
-    board.set_cell((4, 5), Cell.PRIMED)    # adjacent
-    board.set_cell((5, 4), Cell.PRIMED)    # adjacent
-    board.set_cell((6, 5), Cell.CARPET)    # adjacent
-    # (5,6) is SPACE; other neighbors not primed/carpet.
-    # Adjacency bonus: our worker at (0,0) is not adjacent to any
-    # endpoint (isolated primes with k=1 don't count as lines anyway).
-    assert _opp_mobility_denied_plus_adjacency(board) == 3
-
-
 def test_f10_rewards_our_adjacency_to_primed_endpoint():
-    """T-40-EXPLOIT-2 F10 adjacency bonus: our worker adjacent to a
+    """T-40-EXPLOIT-2 F10 (option b): our worker Manhattan-1 from a
     primed-line endpoint (k ≥ 2)."""
-    from RattleBot.heuristic import _opp_mobility_denied_plus_adjacency
+    from RattleBot.heuristic import _primed_endpoint_adjacency
     board = _fresh_board(
         player_pos=(2, 0), opp_pos=(7, 7), blockers=False
     )
-    # Primed k=2 H-line: (3,0)(4,0). Endpoints: (3,0) and (4,0).
-    # Our worker (2,0) is Manhattan 1 from (3,0) → +1. Not from (4,0).
-    # Base (opp 7,7 has no primed/carpet neighbors) = 0.
+    # Primed k=2 H-line (3,0)(4,0). Our worker (2,0) → Manhattan 1
+    # from endpoint (3,0); 2 from endpoint (4,0). Exactly 1 endpoint
+    # adjacent → +1.
     board.set_cell((3, 0), Cell.PRIMED)
     board.set_cell((4, 0), Cell.PRIMED)
-    assert _opp_mobility_denied_plus_adjacency(board) == 1
+    assert _primed_endpoint_adjacency(board) == 1
 
 
-def test_f10_counts_both_endpoints_when_adjacent():
-    """If our worker is adjacent to BOTH endpoints (trivially: k=2
-    line adjacent to our worker with both endpoints within Manhattan
-    1), count both."""
-    from RattleBot.heuristic import _opp_mobility_denied_plus_adjacency
+def test_f10_vertical_line_adjacency():
+    """Vertical primed-line adjacency also counted."""
+    from RattleBot.heuristic import _primed_endpoint_adjacency
     board = _fresh_board(
         player_pos=(3, 1), opp_pos=(7, 7), blockers=False
     )
-    # Vertical k=2 line: (3,2)(3,3). Our worker (3,1). Manhattan
-    # to (3,2)=1, to (3,3)=2. Only (3,2) within 1.
+    # Vertical k=2 (3,2)(3,3). Our worker (3,1). Manhattan to
+    # (3,2)=1; to (3,3)=2. Exactly 1 endpoint adjacent.
     board.set_cell((3, 2), Cell.PRIMED)
     board.set_cell((3, 3), Cell.PRIMED)
-    assert _opp_mobility_denied_plus_adjacency(board) == 1
+    assert _primed_endpoint_adjacency(board) == 1
+
+
+def test_f10_counts_both_endpoints_when_adjacent_to_both():
+    """A k=2 line with BOTH endpoints Manhattan-1 from our worker
+    counts twice. Example: line (2,0)(2,1), our worker at (2,2): no,
+    (2,2) is M=2 from (2,0), M=1 from (2,1). Only 1 endpoint adjacent.
+
+    But: line (2,2)(3,2), our worker (2,1): M=1 from (2,2)=adjacent,
+    M=2 from (3,2)=not. Only 1.
+
+    A truly-both-endpoint-adjacent case: line (2,0)(3,0), our worker
+    at (2,0)+(3,0)/2 → can't, worker can't be on the line. Actually
+    in Manhattan geometry, NO single cell is M=1 from BOTH endpoints
+    of a horizontal k=2 line unless the worker is off-axis. Cell
+    (2,1) is M=1 from (2,0) and M=2 from (3,0). Cell (3,1) is M=1
+    from (3,0) and M=2 from (2,0). So the "both" case is only
+    possible if the line is degenerate. Skip as unreachable; focus
+    on single-endpoint adjacency across axes.
+    """
+    # This documents the behavior rather than asserting both-hit.
+    from RattleBot.heuristic import _primed_endpoint_adjacency
+    board = _fresh_board(
+        player_pos=(2, 1), opp_pos=(7, 7), blockers=False
+    )
+    board.set_cell((2, 0), Cell.PRIMED)
+    board.set_cell((3, 0), Cell.PRIMED)
+    # Endpoint (2,0): M=1 from (2,1) → +1. Endpoint (3,0): M=2 → not.
+    # Result 1.
+    assert _primed_endpoint_adjacency(board) == 1
 
 
 def test_f10_ignores_k1_lines():
-    """Isolated primes (k=1) don't contribute to adjacency bonus."""
-    from RattleBot.heuristic import _opp_mobility_denied_plus_adjacency
+    """Isolated primes (k=1) don't contribute to adjacency."""
+    from RattleBot.heuristic import _primed_endpoint_adjacency
     board = _fresh_board(
         player_pos=(2, 0), opp_pos=(7, 7), blockers=False
     )
     board.set_cell((3, 0), Cell.PRIMED)  # isolated, k=1
-    # Base = 0 (opp 7,7 no adjacent primed/carpet).
-    # Adjacency: k=1 ignored.
-    assert _opp_mobility_denied_plus_adjacency(board) == 0
+    assert _primed_endpoint_adjacency(board) == 0
+
+
+def test_f10_zero_when_no_primes():
+    from RattleBot.heuristic import _primed_endpoint_adjacency
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(5, 5), blockers=False
+    )
+    assert _primed_endpoint_adjacency(board) == 0
 
 
 def test_f10_feature_slot_wired_correctly():
-    from RattleBot.heuristic import _opp_mobility_denied_plus_adjacency
+    from RattleBot.heuristic import _primed_endpoint_adjacency
     board = _fresh_board(
         player_pos=(2, 0), opp_pos=(5, 5), blockers=False
     )
     for loc in [(3, 0), (4, 0)]:
         board.set_cell(loc, Cell.PRIMED)
-    board.set_cell((4, 5), Cell.PRIMED)  # opp's adjacency
+    # Opp has unrelated adjacent primed cell — should NOT count since
+    # F10 in option (b) doesn't include opp's mobility-denied base.
+    board.set_cell((4, 5), Cell.PRIMED)  # isolated, k=1 from (5,5)-view
     bs = _uniform_belief_summary()
     feats = features(board, bs)
-    direct = _opp_mobility_denied_plus_adjacency(board)
+    direct = _primed_endpoint_adjacency(board)
     assert feats[17] == direct
-    # Base 1 (opp-adj primed) + adj 1 (our endpoint-adj) = 2.
-    assert feats[17] == 2.0
+    # Our (2,0) adjacent to endpoint (3,0) of the (3,0)-(4,0) k=2 line.
+    # The (4,5) prime is isolated/k=1 and doesn't contribute.
+    assert feats[17] == 1.0
 
 
 def test_f24_mirrors_f17_on_opp_side():

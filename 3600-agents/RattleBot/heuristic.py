@@ -113,14 +113,14 @@ Features (all float64, sign-carried by W_INIT):
                                   we treat every line as a candidate
                                   and rely on our-closer-than-opp to
                                   pick real steal targets.
-  F10 opp_mobility_denied_plus_adj = count of PRIMED|CARPET cardinal
-                                  neighbors of opp_worker PLUS count of
-                                  primed-line endpoints (k ≥ 2) that
-                                  are cardinal-adjacent to our_worker.
-                                  Per OPPONENT_EXPLOITS §T-40-EXPLOIT-2.
-                                  Positive weight — higher = opp is
-                                  boxed AND/OR we're adjacent-to-steal.
-                                  Integer in [0, 8] typical.
+  F10 primed_endpoint_adjacency = count of primed-line endpoints
+                                  (k ≥ 2) cardinal-adjacent to our
+                                  worker. Per OPPONENT_EXPLOITS
+                                  §T-40-EXPLOIT-2 (option (b),
+                                  adjacency-only). Positive weight —
+                                  higher = we're one plain-step from
+                                  rolling a primed line. Integer in
+                                  [0, ~8].
   F24 opp_wasted_primes         = mirror of F17 applied to opp's side:
                                   count of primed cells reachable by
                                   opp within opp.turns_left AND isolated
@@ -314,20 +314,16 @@ GAMMA_RESET: float = 0.3
 #                      Falsification per OPPONENT_EXPLOITS §T-40-EXPLOIT-1:
 #                      if paired George scrimmage shows 0 actual
 #                      steals in 20 matches, drop from W_INIT.
-#  17   F10    +0.15   Opp-mobility-denied + adjacent-to-primed-endpoint
-#                      bonus. Per T-40-EXPLOIT-2 / OPPONENT_EXPLOITS.md
-#                      §T-40-EXPLOIT-2: sum of (a) count of PRIMED or
-#                      CARPET cells cardinal-adjacent to opp worker
-#                      (mobility-denied base); (b) count of primed-line
-#                      endpoints (k ≥ 2) that are cardinal-adjacent to
-#                      OUR worker (we're perfectly positioned to steal
-#                      next ply). Positive — higher = we've boxed opp in
-#                      AND/OR we're adjacent to a steal. Small magnitude
-#                      because each sub-signal is in [0, 4].
-#                      Attribution caveat: "cells we've primed/carpeted"
-#                      is aspirational (engine doesn't track) — we count
-#                      all PRIMED/CARPET cells since those equally
-#                      restrict opp movement regardless of who laid them.
+#  17   F10    +0.15   Primed-endpoint-adjacency bonus (T-40-EXPLOIT-2,
+#                      option (b) adjacency-only per team-lead). Count
+#                      of primed-line endpoints (k ≥ 2) cardinal-adjacent
+#                      to OUR worker. Positive — we're one plain-step
+#                      from perfectly positioned to carpet-roll a primed
+#                      line next ply. Small magnitude because in [0, 8].
+#                      Design note: earlier draft combined with a
+#                      mobility-denied base; team-lead chose adjacency-
+#                      only (single clean signal, cleanly separable in
+#                      BO space, falsifiable).
 #  18   F24    +0.15   Opp-wasted-primes (mirror of F17). Per T-40-EXPLOIT-3
 #                      / OPPONENT_EXPLOITS.md §T-40-EXPLOIT-3: count of
 #                      primed cells that are (a) within Manhattan ≤ opp's
@@ -1152,81 +1148,72 @@ def _prime_steal_bonus(board: board_mod.Board) -> float:
     return total
 
 
-def _opp_mobility_denied_plus_adjacency(board: board_mod.Board) -> int:
-    """F10 helper (T-40-EXPLOIT-2): combined mobility-denied + adjacency
-    bonus per OPPONENT_EXPLOITS §T-40-EXPLOIT-2.
+def _primed_endpoint_adjacency(board: board_mod.Board) -> int:
+    """F10 helper (T-40-EXPLOIT-2, option (b) adjacency-only per
+    team-lead 2026-04-17): count primed-line endpoints (k ≥ 2) that
+    are cardinal-adjacent (Manhattan == 1) to OUR worker.
 
-    Returns an integer count:
-      base = count of cardinal-adjacent cells to OPP's worker that are
-             PRIMED or CARPET (these restrict opp movement regardless
-             of who laid them — opp can't step onto a PRIMED cell per
-             SPEC §2.1 and we can walk through the resulting CARPET
-             anyway, so the mobility-denied signal is ownership-
-             agnostic).
-      adjacency_bonus = count of primed-line endpoints (k ≥ 2) that are
-             cardinal-adjacent to OUR worker. Signals "we are one plain
-             step from being perfectly positioned to start rolling a
-             primed line next turn" — tight coupling with F22's steal
-             signal but distinct in that F22 rewards being NEAREST to
-             an endpoint while F10-adj rewards being DIRECTLY ADJACENT.
+    Returns an integer in [0, ~8]. Signals "we are one plain-step from
+    being perfectly positioned to start rolling a primed line next
+    turn". Distinct from F22 (which rewards being NEAREST to any
+    endpoint globally) — F10 rewards being DIRECTLY ADJACENT, which is
+    tight-coupling to an imminent prime-or-carpet action.
 
-    Returns `base + adjacency_bonus`, an integer typically in [0, 8].
+    Scans H + S directions with line-start dedup (same pattern as
+    `_prime_steal_bonus`) so each maximal primed run is inspected
+    exactly once per axis. Each endpoint contributes +1 if it's within
+    Manhattan 1 of our worker (both endpoints may contribute on small
+    lines).
+
+    Attribution caveat (same as F22): engine doesn't track prime
+    ownership, so any primed line is a candidate. This is correct — we
+    can roll any PRIMED line regardless of who primed it (SPEC §2.3).
+
+    Design note (why NOT combined with a mobility-denied base per an
+    earlier v0.4.2 draft): option (b) keeps the feature purpose-built
+    for the exploit hypothesis (adjacent-to-steal), cleanly separable
+    in BO space. The mobility-denied base was never a shipped v0.x
+    feature; keeping F10 adjacency-only gives BO a single-signal to
+    weight, avoiding the combined-signal disentangling cost.
     """
     primed = board._primed_mask
-    carpet = board._carpet_mask
-    ox, oy = board.opponent_worker.position
+    if primed == 0:
+        return 0
     wx, wy = board.player_worker.position
 
-    # Part (a): base mobility-denied. Count PRIMED/CARPET cardinal
-    # neighbors of opp worker.
-    base = 0
-    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
-        nx, ny = ox + dx, oy + dy
-        if not (0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE):
-            continue
-        bit = 1 << (ny * BOARD_SIZE + nx)
-        if (primed | carpet) & bit:
-            base += 1
-
-    # Part (b): adjacency to primed-line endpoints. Scan H + S as in
-    # _prime_steal_bonus's line-start dedup; for each maximal primed
-    # run of k ≥ 2, check both endpoints against our worker's cardinal
-    # neighbors (Manhattan == 1).
-    adjacency_bonus = 0
-    if primed != 0:
-        for dx, dy in ((1, 0), (0, 1)):
-            for idx in range(_BOARD_CELLS):
-                bit = 1 << idx
-                if not (primed & bit):
+    adjacency = 0
+    for dx, dy in ((1, 0), (0, 1)):
+        for idx in range(_BOARD_CELLS):
+            bit = 1 << idx
+            if not (primed & bit):
+                continue
+            x = idx % BOARD_SIZE
+            y = idx // BOARD_SIZE
+            # Line-start dedup
+            px, py = x - dx, y - dy
+            if 0 <= px < BOARD_SIZE and 0 <= py < BOARD_SIZE:
+                prev_bit = 1 << (py * BOARD_SIZE + px)
+                if primed & prev_bit:
                     continue
-                x = idx % BOARD_SIZE
-                y = idx // BOARD_SIZE
-                # Line-start dedup
-                px, py = x - dx, y - dy
-                if 0 <= px < BOARD_SIZE and 0 <= py < BOARD_SIZE:
-                    prev_bit = 1 << (py * BOARD_SIZE + px)
-                    if primed & prev_bit:
-                        continue
-                # Walk forward
-                k = 1
-                nx, ny = x + dx, y + dy
-                while (
-                    0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE
-                    and (primed & (1 << (ny * BOARD_SIZE + nx)))
-                ):
-                    k += 1
-                    nx += dx
-                    ny += dy
-                if k < 2:
-                    continue
-                ex, ey = x + (k - 1) * dx, y + (k - 1) * dy
-                # Test each endpoint against our worker's Manhattan-1.
-                if abs(wx - x) + abs(wy - y) == 1:
-                    adjacency_bonus += 1
-                if abs(wx - ex) + abs(wy - ey) == 1:
-                    adjacency_bonus += 1
-
-    return base + adjacency_bonus
+            # Walk forward to measure k
+            k = 1
+            nx, ny = x + dx, y + dy
+            while (
+                0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE
+                and (primed & (1 << (ny * BOARD_SIZE + nx)))
+            ):
+                k += 1
+                nx += dx
+                ny += dy
+            if k < 2:
+                continue
+            ex, ey = x + (k - 1) * dx, y + (k - 1) * dy
+            # Test each endpoint against our worker's Manhattan-1.
+            if abs(wx - x) + abs(wy - y) == 1:
+                adjacency += 1
+            if abs(wx - ex) + abs(wy - ey) == 1:
+                adjacency += 1
+    return adjacency
 
 
 def _opp_wasted_primes(board: board_mod.Board) -> int:
@@ -1482,9 +1469,9 @@ def features(
     # primed mask with early terminations.
     out[16] = _prime_steal_bonus(board)
 
-    # F10 — opp mobility denied + primed-endpoint-adjacency bonus
-    # (T-40-EXPLOIT-2). Integer count, typically in [0, 8].
-    out[17] = float(_opp_mobility_denied_plus_adjacency(board))
+    # F10 — primed-endpoint adjacency bonus (T-40-EXPLOIT-2,
+    # option (b) adjacency-only). Integer count in [0, ~8].
+    out[17] = float(_primed_endpoint_adjacency(board))
 
     # F24 — opp wasted primes: mirror of F17 applied to opp's reachable
     # primes (T-40-EXPLOIT-3). Integer count, typically in [0, 3].
