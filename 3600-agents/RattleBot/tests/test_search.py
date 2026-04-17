@@ -244,35 +244,41 @@ def test_alphabeta_matches_minimax():
 # TT hit-rate test
 
 def test_tt_reduces_nodes():
+    """With a warm TT, second call should either hit more depth, have
+    TT-based cutoffs, or reach the same move with fewer nodes."""
     b = _make_board(seed=11)
     belief = _uniform_belief()
     z = Zobrist(seed=11)
 
     s1 = Search(zobrist=z, tt_size=1 << 14)
     s1.iterative_deepen(b, belief, _point_eval, time_left_s=0.8, safety_s=0.05)
-    first_nodes = s1.nodes
-    first_hits = s1.tt_hits
-    first_probes = s1.tt_probes
+    first_stats = s1.get_stats()
+    first_nodes = first_stats["nodes"]
+    first_depth = first_stats["last_depth_reached"]
 
-    # Second run reuses the SAME search engine (TT warm). It should reach
-    # at least the same depth with fewer nodes OR exhibit >0 cutoffs from TT.
-    s1.nodes = 0
-    before_cutoffs = s1.tt_cutoffs
+    # Second run reuses the SAME engine (warm TT).
     s1.iterative_deepen(b, belief, _point_eval, time_left_s=0.8, safety_s=0.05)
-    second_nodes = s1.nodes
+    second_stats = s1.get_stats()
+    second_nodes = second_stats["nodes"]
+    second_depth = second_stats["last_depth_reached"]
+    tt_cutoffs = second_stats["tt_cutoffs"]
 
     assert first_nodes > 0
-    assert s1.tt_hits > first_hits, "TT hits should grow on second run"
-    # Second run should benefit: either fewer nodes or non-zero cutoffs added.
-    cutoffs_gained = s1.tt_cutoffs - before_cutoffs
-    assert second_nodes < first_nodes or cutoffs_gained > 0, (
-        f"TT did not help: first_nodes={first_nodes} second_nodes={second_nodes} "
-        f"cutoffs_gained={cutoffs_gained}"
+    # Warm TT must produce real work-savings signal: either deeper, or
+    # fewer nodes at the same depth, or TT-flag cutoffs fired.
+    saved = (
+        second_depth > first_depth
+        or (second_depth == first_depth and second_nodes < first_nodes)
+        or tt_cutoffs > 0
+    )
+    assert saved, (
+        f"TT did not help: first_nodes={first_nodes}@d{first_depth} "
+        f"second_nodes={second_nodes}@d{second_depth} tt_cutoffs={tt_cutoffs}"
     )
     print(
         f"PASS test_tt_reduces_nodes  "
-        f"(first_nodes={first_nodes}, second_nodes={second_nodes}, "
-        f"tt_hits={s1.tt_hits}, tt_cutoffs={s1.tt_cutoffs})"
+        f"(d1={first_depth} n1={first_nodes}  d2={second_depth} n2={second_nodes} "
+        f"tt_cutoffs={tt_cutoffs})"
     )
 
 
@@ -384,6 +390,222 @@ def test_root_decision_triggers_search_when_mass_high():
 
 
 # ---------------------------------------------------------------------------
+# T-20e: move-ordering instrumentation + audit tests
+
+def test_get_stats_schema():
+    """`get_stats()` returns all T-20e telemetry fields."""
+    b = _make_board(seed=29)
+    belief = _uniform_belief()
+    s = Search(zobrist=Zobrist(seed=29), tt_size=1 << 14)
+    s.iterative_deepen(b, belief, _point_eval, time_left_s=0.3, safety_s=0.05)
+    stats = s.get_stats()
+    required = [
+        "nodes", "leaves", "last_depth_reached",
+        "tt_probes", "tt_hits", "tt_hit_rate", "tt_cutoffs",
+        "tt_stores", "tt_replacements",
+        "hash_move_attempts", "hash_move_legal", "hash_move_first",
+        "killer_slot_0_hits", "killer_slot_1_hits",
+        "history_reorder_count",
+        "cutoffs_total", "cutoff_on_first_move",
+        "cutoff_on_first_rate", "cutoff_on_nth_move",
+    ]
+    missing = [k for k in required if k not in stats]
+    assert not missing, f"stats missing keys: {missing}"
+    assert isinstance(stats["cutoff_on_nth_move"], list)
+    assert len(stats["cutoff_on_nth_move"]) == 8
+    print(f"PASS test_get_stats_schema  ({len(required)} fields present)")
+
+
+def test_ordering_stack_fires():
+    """Hash-move, killer, and history tiers all must produce > 0 hits in a
+    non-trivial search."""
+    b = _make_board(seed=31)
+    belief = _uniform_belief()
+    s = Search(zobrist=Zobrist(seed=31), tt_size=1 << 14)
+    # Deep enough budget to warm the TT + history + killers.
+    s.iterative_deepen(b, belief, _point_eval, time_left_s=1.5, safety_s=0.1)
+    stats = s.get_stats()
+
+    assert stats["hash_move_attempts"] > 0, "TT never offered a hash move"
+    assert stats["hash_move_legal"] > 0, "hash moves never matched a legal move"
+    assert stats["hash_move_first"] > 0, "hash move never sat at ordered[0]"
+    # Cutoffs must happen
+    assert stats["cutoffs_total"] > 0, "no beta-cutoffs in tree"
+    # Killer table must get populated and lead to at least some slot-0 hits
+    killer_hits = stats["killer_slot_0_hits"] + stats["killer_slot_1_hits"]
+    assert killer_hits > 0, "killer slots never led ordered[0]"
+    # History must influence ordering at least once
+    assert stats["history_reorder_count"] > 0, "history never influenced ordering"
+    print(
+        f"PASS test_ordering_stack_fires  "
+        f"(hash_first={stats['hash_move_first']}, "
+        f"killer_hits={killer_hits}, "
+        f"history_reorder={stats['history_reorder_count']}, "
+        f"cutoff_first_rate={stats['cutoff_on_first_rate']:.2f})"
+    )
+
+
+def _apply_any_move(board):
+    """Advance board by one legal (non-SEARCH) move in each perspective.
+
+    Mutates by applying the move, reversing perspective, and returning the
+    mutated board so the caller can use it as the next 'current' state.
+    """
+    legal = board.get_valid_moves(exclude_search=True)
+    if not legal:
+        return board
+    # Prefer CARPET/PRIME to change the cell masks (more TT churn = more
+    # realistic evolving-board scenario).
+    legal.sort(key=lambda m: (m.move_type, -(m.roll_length or 0)))
+    for mv in legal:
+        ok = board.apply_move(mv, check_ok=False)
+        if ok:
+            break
+    board.reverse_perspective()
+    return board
+
+
+def test_tt_hit_rate_20_calls():
+    """Run 20 consecutive searches on an evolving board.
+
+    T-20e gate (relative to BOT_STRATEGY addendum §2.3): confirms the
+    ordering/TT pipeline keeps firing across real game turns. We check:
+      - TT hit-rate across calls 10-19 remains > 40 % (the T-SRCH-3 gate
+        is > 15 %; iterative-deepening naturally re-probes positions as
+        early-depth iterations warm the TT for deeper ones, so 40 % is
+        the correct realistic ceiling on an evolving board at depth 5-9);
+      - cutoff_on_first_rate > 0.60 (§2.3 hard gate — measures that move
+        ordering is actually producing best-move-first cutoffs);
+      - TT cutoffs happen on most calls (proves the TT is consulted).
+    """
+    b = _make_board(seed=37)
+    belief = _uniform_belief()
+    s = Search(zobrist=Zobrist(seed=37), tt_size=1 << 16)
+
+    per_call_probes = []
+    per_call_hits = []
+    per_call_depth = []
+    per_call_first_rate = []
+    per_call_tt_cutoffs = []
+    for _ in range(20):
+        s.iterative_deepen(b, belief, _point_eval, time_left_s=0.25, safety_s=0.05)
+        stats = s.get_stats()
+        per_call_probes.append(stats["tt_probes"])
+        per_call_hits.append(stats["tt_hits"])
+        per_call_depth.append(stats["last_depth_reached"])
+        per_call_first_rate.append(stats["cutoff_on_first_rate"])
+        per_call_tt_cutoffs.append(stats["tt_cutoffs"])
+        b = _apply_any_move(b)
+
+    late_probes = sum(per_call_probes[10:])
+    late_hits = sum(per_call_hits[10:])
+    late_rate = late_hits / late_probes if late_probes else 0.0
+
+    assert late_probes > 0, "no probes in late-half calls"
+    # Hit-rate on calls 10-19 must clear the realistic >40% bar.
+    assert late_rate > 0.40, (
+        f"TT hit-rate calls 10-19 = {late_rate:.3f}; gate is >0.40. "
+        f"per-call probes={per_call_probes} hits={per_call_hits}"
+    )
+    # First-move-cutoff rate must be > 0.60 averaged over late calls.
+    late_first_rate = (
+        sum(per_call_first_rate[10:]) / len(per_call_first_rate[10:])
+    )
+    assert late_first_rate > 0.60, (
+        f"cutoff_on_first_rate calls 10-19 = {late_first_rate:.3f}; gate >0.60"
+    )
+    # At least 80 % of late calls must see >= 1 TT cutoff.
+    late_with_cutoff = sum(1 for c in per_call_tt_cutoffs[10:] if c > 0)
+    assert late_with_cutoff >= 8, (
+        f"only {late_with_cutoff}/10 late calls had TT cutoffs"
+    )
+    avg_depth = sum(per_call_depth) / len(per_call_depth)
+    print(
+        f"PASS test_tt_hit_rate_20_calls  "
+        f"(late_rate={late_rate:.3f}, late_first_cutoff={late_first_rate:.3f}, "
+        f"avg_depth={avg_depth:.1f}, late_calls_with_tt_cutoff={late_with_cutoff}/10)"
+    )
+
+
+def test_killer_move_promoted():
+    """When a killer slot holds a MoveKey that matches a legal move, the
+    returned `ordered_moves` list places that killer at or near the front
+    (ahead of type-priority tier)."""
+    from RattleBot.move_gen import ordered_moves as om
+    b = _make_board(seed=41)
+    legal = b.get_valid_moves(exclude_search=True)
+    assert legal
+    # Pick a PLAIN move that would normally sort LAST by type-priority.
+    target = None
+    for m in legal:
+        if m.move_type == MoveType.PLAIN:
+            target = m
+            break
+    assert target is not None, "fixture expects at least one PLAIN legal"
+    target_key = move_key(target)
+
+    # With no killer, the PLAIN move should NOT lead.
+    baseline = om(b, history=None, killers=None)
+    assert move_key(baseline[0]) != target_key or len(baseline) == 1, (
+        "fixture assumption: PLAIN shouldn't be ordered[0] by default"
+    )
+
+    # With killer slot 0 set to the PLAIN move, it must lead.
+    promoted = om(b, killers=[target_key, None])
+    assert move_key(promoted[0]) == target_key, (
+        f"killer slot 0 failed to promote; got {promoted[0]!r}"
+    )
+    # Killer slot 1 should also promote when slot 0 is None or non-matching
+    promoted2 = om(b, killers=[None, target_key])
+    assert move_key(promoted2[0]) == target_key
+    print("PASS test_killer_move_promoted")
+
+
+def test_history_reorder_monotone():
+    """Repeated cutoffs on a MoveKey must increase its history priority so
+    that, all else equal, ordered_moves promotes it."""
+    from RattleBot.move_gen import ordered_moves as om
+    b = _make_board(seed=43)
+    legal = b.get_valid_moves(exclude_search=True)
+    assert legal
+    # Pick a PLAIN move (lowest default priority tier among non-k=1 moves).
+    target = next((m for m in legal if m.move_type == MoveType.PLAIN), None)
+    assert target is not None
+    tkey = move_key(target)
+
+    # With no history, target is typically not first.
+    base = om(b)
+    base_idx = next(
+        (i for i, m in enumerate(base) if move_key(m) == tkey), None
+    )
+    assert base_idx is not None
+
+    # Incrementally increase history; find the point where target sits
+    # ahead of the type-0 (CARPET-k>=2) block or at least moves forward.
+    history: Dict[MoveKey, int] = {}
+    for _ in range(50):
+        history[tkey] = history.get(tkey, 0) + 1
+    out = om(b, history=history)
+    new_idx = next(i for i, m in enumerate(out) if move_key(m) == tkey)
+
+    # Higher-priority CARPET moves (same type bucket) still come first, but
+    # among same-type bucket, the target should tie/precede other PLAIN
+    # moves. The clearest assertion: position does not get WORSE, and any
+    # PLAIN that lacks history cannot outrank our target.
+    assert new_idx <= base_idx, (
+        f"history did not help; base_idx={base_idx} new_idx={new_idx}"
+    )
+    # Among same-bucket PLAIN moves, target comes first.
+    plain_order = [m for m in out if m.move_type == MoveType.PLAIN]
+    assert plain_order and move_key(plain_order[0]) == tkey, (
+        "history did not reorder within PLAIN bucket"
+    )
+    print(
+        f"PASS test_history_reorder_monotone  (base_idx={base_idx}, new_idx={new_idx})"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Runner
 
 def _run_all():
@@ -401,6 +623,11 @@ def _run_all():
         test_iterative_deepening_respects_budget,
         test_root_decision_returns_valid_move,
         test_root_decision_triggers_search_when_mass_high,
+        test_get_stats_schema,
+        test_ordering_stack_fires,
+        test_tt_hit_rate_20_calls,
+        test_killer_move_promoted,
+        test_history_reorder_monotone,
     ]
     failures = 0
     for t in tests:

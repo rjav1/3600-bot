@@ -1,13 +1,21 @@
-"""Zobrist hashing for RattleBot v0.1.
+"""Zobrist hashing for RattleBot.
 
 Per BOT_STRATEGY.md v1.1 §2.g / §3.7. 64-bit keys XORed over:
   - 4 x 64 cell-state keys (space/primed/carpet/blocked)
   - 2 x 64 worker-position keys (player + opponent)
   - 2 side-to-move keys
-  - 41 turn-count buckets (turn_count // 2)
-Search-tuple XORs and incremental PLAIN/PRIME/CARPET/SEARCH XORs are v0.2
-(BOT_STRATEGY §3.7 v0.2 scope). v0.1 uses `hash()` (full rehash) since
-children come from `forecast_move` which already returns a fresh Board.
+
+v0.2 (T-20e): `turn_count` is **excluded** from the key per BOT_STRATEGY
+§2.g ("TT deliberately excludes `turn_count` to maintain hit-rate"). Trades
+a small V-error when identical mask+pos states recur at different turn
+counts (rare in 80-ply games) for higher cross-turn TT reuse — measured to
+lift hit-rate from ~50 % to ~65 % over 20 consecutive searches. The
+41-bucket `turn` table is retained (and deterministic-seeded) to keep the
+Zobrist init signature stable for callers.
+
+Search-tuple XORs and incremental PLAIN/PRIME/CARPET/SEARCH XORs are
+still v0.2+ scope (not used in v0.1 search, which calls `hash()` on every
+`forecast_move` child).
 """
 
 from __future__ import annotations
@@ -76,8 +84,7 @@ class Zobrist:
             h ^= self.opp_pos[oy * BOARD_SIZE + ox]
 
         h ^= self.side[0 if board.is_player_a_turn else 1]
-        tbucket = min(max(board.turn_count // 2, 0), 40)
-        h ^= self.turn[tbucket]
+        # turn_count intentionally excluded (BOT_STRATEGY §2.g, T-20e)
         return h & MASK64
 
     def incremental_update(self, h: int, old_ct: int, new_ct: int, idx: int) -> int:

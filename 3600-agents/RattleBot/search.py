@@ -1,9 +1,11 @@
-"""Alpha-beta + iterative deepening + Zobrist TT for RattleBot v0.1.
+"""Alpha-beta + iterative deepening + Zobrist TT for RattleBot.
 
-Per BOT_STRATEGY.md v1.1 §2.a / §2.d / §2.f / §2.g / §3.3.
+Per BOT_STRATEGY.md v1.1 §2.a / §2.d / §2.f / §2.g / §3.3 and v0.2 addendum
+§2.3 T-20e (move-ordering instrumentation).
+
 Belief is a leaf potential (D-004); SEARCH is root-only (D-011 item 2).
-v0.1 uses `board.forecast_move(...)` + `reverse_perspective()` for child
-generation. Time safety margin: 0.5 s (D-011 item 4).
+Time safety margin: 0.5 s (D-011 item 4). v0.2 adds `get_stats()` telemetry
+covering the full ordering stack (hash-move, killer, history, TT, cutoffs).
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ MATE_SCORE: float = 1e9
 DRAW_SCORE: float = 0.0
 MAX_DEPTH: int = 32
 _TIME_CHECK_EVERY = 1024
+_CUTOFF_HIST_BUCKETS = 8  # index i = cutoff on i-th move (i>=7 clamps to 7)
 
 
 class _TimeUp(Exception):
@@ -39,6 +42,21 @@ class Search:
     """Alpha-beta + iterative deepening + two-slot Zobrist TT.
 
     TT: slot 0 depth-preferred, slot 1 always-replace. Both probed on hit.
+
+    v0.2 telemetry (per `get_stats()`):
+        nodes, leaves           -- counters reset at every iterative_deepen
+        tt_probes, tt_hits, tt_cutoffs, tt_stores, tt_replacements
+        hash_move_attempts      -- nodes where a TT best_move was offered
+        hash_move_legal         -- subset where the hash-move was legal
+        hash_move_first         -- subset where the hash-move sat at slot 0
+        killer_slot_0_hits      -- nodes where ordered[0] == killers_here[0]
+        killer_slot_1_hits      -- nodes where ordered[0] == killers_here[1]
+        history_reorder_count   -- nodes where a non-empty history dict had
+                                    at least one legal-move match (i.e.
+                                    history actually influenced ordering)
+        cutoffs_total           -- sum of beta-cutoffs
+        cutoff_on_first_move    -- beta-cutoffs on ordered[0]
+        cutoff_on_nth_move[i]   -- beta-cutoffs on ordered[i] (0..7 clamp)
     """
 
     def __init__(
@@ -60,11 +78,6 @@ class Search:
         self.tt: List[List[Optional[TTEntry]]] = [
             [None, None] for _ in range(tt_size)
         ]
-        self.tt_probes = 0
-        self.tt_hits = 0
-        self.tt_cutoffs = 0
-        self.nodes = 0
-        self.leaves = 0
 
         self.gamma_info = float(gamma_info)
         self.gamma_reset = float(gamma_reset)
@@ -79,13 +92,68 @@ class Search:
         self._eval_fn: Optional[Callable[..., float]] = None
         self._root_belief: Optional[BeliefSummary] = None
 
+        self._init_counters()
+
+    def _init_counters(self) -> None:
+        self.nodes = 0
+        self.leaves = 0
+        self.tt_probes = 0
+        self.tt_hits = 0
+        self.tt_cutoffs = 0
+        self.tt_stores = 0
+        self.tt_replacements = 0
+
+        self.hash_move_attempts = 0
+        self.hash_move_legal = 0
+        self.hash_move_first = 0
+        self.killer_slot_0_hits = 0
+        self.killer_slot_1_hits = 0
+        self.history_reorder_count = 0
+
+        self.cutoffs_total = 0
+        self.cutoff_on_first_move = 0
+        self.cutoff_on_nth_move = [0] * _CUTOFF_HIST_BUCKETS
+
+        self.last_depth_reached = 0
+
+    def get_stats(self) -> Dict[str, object]:
+        """Snapshot telemetry from the most recent `iterative_deepen`."""
+        tt_hit_rate = (
+            self.tt_hits / self.tt_probes if self.tt_probes else 0.0
+        )
+        first_cutoff_rate = (
+            self.cutoff_on_first_move / self.cutoffs_total
+            if self.cutoffs_total else 0.0
+        )
+        return {
+            "nodes": self.nodes,
+            "leaves": self.leaves,
+            "last_depth_reached": self.last_depth_reached,
+            "tt_probes": self.tt_probes,
+            "tt_hits": self.tt_hits,
+            "tt_hit_rate": tt_hit_rate,
+            "tt_cutoffs": self.tt_cutoffs,
+            "tt_stores": self.tt_stores,
+            "tt_replacements": self.tt_replacements,
+            "hash_move_attempts": self.hash_move_attempts,
+            "hash_move_legal": self.hash_move_legal,
+            "hash_move_first": self.hash_move_first,
+            "killer_slot_0_hits": self.killer_slot_0_hits,
+            "killer_slot_1_hits": self.killer_slot_1_hits,
+            "history_reorder_count": self.history_reorder_count,
+            "cutoffs_total": self.cutoffs_total,
+            "cutoff_on_first_move": self.cutoff_on_first_move,
+            "cutoff_on_first_rate": first_cutoff_rate,
+            "cutoff_on_nth_move": list(self.cutoff_on_nth_move),
+        }
+
     # -- TT ------------------------------------------------------------
 
     def reset_tt(self) -> None:
         for bucket in self.tt:
             bucket[0] = None
             bucket[1] = None
-        self.tt_probes = self.tt_hits = self.tt_cutoffs = 0
+        self._init_counters()
 
     def _probe_tt(self, key: int) -> Optional[TTEntry]:
         self.tt_probes += 1
@@ -103,9 +171,16 @@ class Search:
         )
         bucket = self.tt[key & self.tt_mask]
         slot0 = bucket[0]
-        if slot0 is None or depth >= slot0.depth:
+        if slot0 is None:
             bucket[0] = entry
+        elif depth >= slot0.depth:
+            if slot0.zobrist_key != key:
+                self.tt_replacements += 1
+            bucket[0] = entry
+        if bucket[1] is not None and bucket[1].zobrist_key != key:
+            self.tt_replacements += 1
         bucket[1] = entry
+        self.tt_stores += 1
 
     # -- time ----------------------------------------------------------
 
@@ -124,13 +199,16 @@ class Search:
         safety_s: float = 0.5,
     ) -> Move:
         """Iteratively deepen until time runs out; return the best non-SEARCH
-        move from the deepest completed iteration.
+        move from the deepest completed iteration. Per-call telemetry is
+        reset at entry and available via `get_stats()` after return.
         """
         self._root_belief = belief
         self._eval_fn = eval_fn
         start = _time.perf_counter()
         budget = max(0.0, float(time_left_s) - float(safety_s))
         self._deadline = start + budget
+
+        self._init_counters()
 
         legal = ordered_moves(board, exclude_search=True)
         if not legal:
@@ -140,13 +218,12 @@ class Search:
             return legal[0]
 
         best_move: Move = legal[0]
-        self.nodes = 0
-        self.leaves = 0
 
         for depth in range(1, MAX_DEPTH + 1):
             try:
                 _, move = self._root_search(board, depth, legal, best_move)
                 best_move = move
+                self.last_depth_reached = depth
                 legal = self._reorder_pv_first(legal, move)
             except _TimeUp:
                 break
@@ -169,12 +246,15 @@ class Search:
         root_key = self.zobrist.hash(board)
         tt_entry = self._probe_tt(root_key)
         hash_mk = tt_entry.best_move if tt_entry else None
+        killers_here = self.killers[depth]
         ordered = ordered_moves(
-            board, hash_move=hash_mk, killers=self.killers[depth],
+            board, hash_move=hash_mk, killers=killers_here,
             history=self.history, exclude_search=True,
         )
         if not ordered:
             ordered = legal
+
+        self._record_ordering_stats(ordered, hash_mk, killers_here)
 
         age = board.turn_count
         for mv in ordered:
@@ -192,6 +272,43 @@ class Search:
         self._store_tt(root_key, depth, best_val, TT_FLAG_EXACT,
                        move_key(best_move), age)
         return best_val, best_move
+
+    # -- ordering telemetry -------------------------------------------
+
+    def _record_ordering_stats(
+        self,
+        ordered: List[Move],
+        hash_mk: Optional[MoveKey],
+        killers_here: Optional[List[Optional[MoveKey]]],
+    ) -> None:
+        if not ordered:
+            return
+        first_key = move_key(ordered[0])
+
+        hash_matched = False
+        if hash_mk is not None:
+            self.hash_move_attempts += 1
+            for m in ordered:
+                if move_key(m) == hash_mk:
+                    self.hash_move_legal += 1
+                    break
+            if first_key == hash_mk:
+                self.hash_move_first += 1
+                hash_matched = True
+
+        if not hash_matched and killers_here is not None:
+            k0 = killers_here[0]
+            k1 = killers_here[1]
+            if k0 is not None and first_key == k0:
+                self.killer_slot_0_hits += 1
+            elif k1 is not None and first_key == k1:
+                self.killer_slot_1_hits += 1
+
+        if self.history:
+            for m in ordered:
+                if self.history.get(move_key(m), 0) > 0:
+                    self.history_reorder_count += 1
+                    break
 
     # -- alpha-beta (negamax) -----------------------------------------
 
@@ -240,9 +357,13 @@ class Search:
             self.leaves += 1
             return self._eval_leaf(board)
 
+        self._record_ordering_stats(ordered, hash_mk, killers_here)
+
         best_val = -MATE_SCORE
         best_mk: Optional[MoveKey] = None
+        move_idx = -1
         for mv in ordered:
+            move_idx += 1
             child = board.forecast_move(mv, check_ok=False)
             if child is None:
                 continue
@@ -254,6 +375,13 @@ class Search:
             if v > alpha:
                 alpha = v
             if alpha >= beta:
+                self.cutoffs_total += 1
+                bucket = move_idx if move_idx < _CUTOFF_HIST_BUCKETS else (
+                    _CUTOFF_HIST_BUCKETS - 1
+                )
+                self.cutoff_on_nth_move[bucket] += 1
+                if move_idx == 0:
+                    self.cutoff_on_first_move += 1
                 mk = move_key(mv)
                 if killers_here is not None and killers_here[0] != mk:
                     killers_here[1] = killers_here[0]
