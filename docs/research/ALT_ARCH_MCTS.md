@@ -8,9 +8,16 @@
 
 ## TL;DR
 
-**Verdict: NOT DECISIVE on first pilot (n=3 decisive matches, MctsBot 2W–1L). A larger N=20 run is underway but not complete at time of writing. Preliminary signal is that MCTS is SURPRISINGLY competitive — it can sweep a pair vs RattleBot by huge margins — but it structurally gives up the entire SEARCH-for-rat channel that α-β+HMM captures cleanly.**
+**Verdict (preliminary, n=3): NOT DECISIVE. MctsBot 2W–1L vs RattleBot v0.1, with one pair-sweep margin of +88 combined points. A full N=20 paired run is in flight (`3600-agents/matches/mcts_rattle_n20/`); §8 addendum will be filled when `summary.json` lands.**
 
-**Recommendation: do NOT rewrite the main bot around MCTS for the April 19 deadline. Do keep the MctsBot folder as an evidentiary artifact and possibly as a tournament backup: on seeds where MctsBot dominates, it dominates by *a lot* (40+ point margins), which hints that a hybrid (MCTS over movement/carpet, HMM-driven SEARCH gate on top) is the real ceiling.**
+**Headline finding: MCTS's strengths and RattleBot's strengths are ADDITIVE, not substitutable.**
+- RattleBot catches 3–5 rats/match (+12 to +20 pts) via HMM-driven SEARCH — MctsBot catches **zero** (uniform prior closes its SEARCH gate).
+- MctsBot can generate 40+ point carpet-roll hauls on open-board seeds that RattleBot misses — observed in pair 0000.
+- These edges don't overlap. A hybrid should beat either pure architecture.
+
+**Recommendation for April 19:** ship RattleBot (α-β + HMM). Small sample, structural SEARCH handicap in pure MCTS.
+
+**Recommendation for v0.3:** build the hybrid: HMM for belief + SEARCH gate, MCTS for MOVE selection, HMM posterior as MCTS's determinization prior. Sketch in §6.2, cost ≈ 120 LOC, falsification plan in §6.4.
 
 ---
 
@@ -187,14 +194,72 @@ Interpretation: MCTS's blind determinism ("I can't see the rat so I'll just carp
 2. The structural SEARCH handicap in MCTS is real and measurable.
 3. Carrie (≥90% tier) is documented to run expectiminimax+HMM with a smart heuristic — matching her architecture is a known-good path. Diverging to MCTS adds architectural risk with unproven upside.
 
-### 6.2 For v0.3+ work (if deadline weren't a factor)
+### 6.2 For v0.3 — hybrid MCTS+HMM architecture (recommended direction)
 
-**The pair 0000 sweep suggests a hybrid:**
-- Use α-β+HMM for the mainline MOVE (plain/prime/carpet) decisions.
-- Use a 1-ply MCTS-lite over SEARCH candidates specifically when HMM posterior entropy is high and the top-cell probability is in the 0.2–0.4 range (the "maybe don't search" band). This preserves HMM's high-confidence captures while adding MCTS-style risk-adjusted exploration to the middling band.
-- Equivalently: the α-β evaluator can be modified to *not* pay the −2 penalty if the information-value of the miss is high. This is more surgical than rewriting the whole thing.
+The preliminary n=3 signal is suspicious of a real effect: MCTS can score 50 and 37 points in a game where RattleBot scores 2 and −3, and it does this with **zero** rat-catching to pad the score. That is purely carpet income. Meanwhile RattleBot's 3–5 rat-catches per match are pure HMM edge. **These two strengths are additive, not substitutable** — a bot that does both should be strictly better than either.
 
-### 6.3 Keep `3600-agents/MctsBot/` as an asset
+#### Architecture sketch: `RattleBot v0.3 = HMM + MCTS movement + α-β-style search-gate`
+
+```
+def play(board, sensor_data, time_left):
+    # 1) HMM belief update (sensor + motion), ~5 ms.
+    belief.update(board, sensor_data)
+
+    # 2) Dedicated SEARCH decision, driven by HMM, NOT by MCTS.
+    #    Reuse RattleBot v0.2's search.root_search_decision logic.
+    if search.is_rat_catch_ev_positive(belief, board):
+        return Move.search(belief.argmax_cell())
+
+    # 3) Otherwise, pick a MOVE with MCTS — SEARCH excluded from root.
+    #    Pass the HMM posterior into MCTS as its determinization prior.
+    move = mcts.choose_move(board, time_left,
+                            rat_prior=belief.grid,   # <-- key
+                            exclude_search=True)
+    return move
+```
+
+#### Why this is a principled design
+
+1. **Keeps HMM's rat-catch channel intact.** `search.root_search_decision` already handles the > 1/3 threshold, the information-value correction for near-miss cells, and endgame timing. Copy it verbatim. That preserves the ~15–20 pts/game edge from rat captures.
+
+2. **Frees MCTS to do what it's actually good at: long-horizon carpet planning.** Take SEARCH out of the tree entirely — no more 64-branch-factor blowup at every node, no more IS-MCTS degeneracy. What's left is a finite, near-perfect-info subgame: "given my worker, opponent worker, cell masks, what sequence of primes/carpets maximizes score?" That's a clean game MCTS rollouts handle well, and it's exactly where MctsBot's pair-0000 sweep came from.
+
+3. **HMM posterior feeds MCTS rollouts, converting poor-man's IS-MCTS into real IS-MCTS.** Replace MctsBot's `rat_sample ~ uniform` with `rat_sample ~ belief.grid`. This:
+   - makes prime-placement aware of the rat's location (priming under high-mass cells leaks via SCRATCH noise — MCTS will learn to avoid it over iterations);
+   - aligns with the theoretical IS-MCTS construction (Cowling 2012): sample hidden state per determinization, play out the determinized game, average rewards.
+
+4. **Budget math:** 5 s/move − 5 ms HMM − 50 ms search-gate decision = ~4.95 s pure MCTS over the MOVE subgame. Since SEARCH is gone from the tree, MctsBot currently spending ~15% of iterations on SEARCH children gets that back as pure movement iterations. Expected iterations/move roughly doubles (empirically need to verify).
+
+5. **The opponent-modelling gap closes partially.** MCTS does open-loop adversarial rollouts (each descent plays both sides with the same greedy policy). That's worse than α-β's full minimax backup, but on a game with branching factor 10–14, UCB1's asymptotic convergence to minimax makes it workable. The bigger win is that the *evaluation* is a real game score at rollout depth — not a linear heuristic with 9 hand-weighted features. For positions the heuristic doesn't capture (multi-turn chain setups, opponent blocking), rollouts may be strictly more honest.
+
+#### 6.3 Estimated cost and risk
+
+| component | effort | reuse | new LOC |
+|-----------|--------|-------|---------|
+| HMM belief grid | zero — already in RattleBot | `rat_belief.py` | 0 |
+| Search-gate decision | zero — exists | `search.root_search_decision` | 0 |
+| MCTS move policy (SEARCH removed) | adapt MctsBot | `MctsBot/agent.py` minus SEARCH code | ~50 diff |
+| Belief-grid → MCTS determinization wiring | new | — | ~30 |
+| Top-level `agent.py` (HMM → gate → MCTS) | new | — | ~40 |
+| **Total new code** | | | **~120 LOC** |
+
+Testing cost: 1 full paired_runner run (N ≥ 20) vs RattleBot v0.2 to check that HMM+MCTS ≥ HMM+α-β.
+
+**Risks:**
+- MCTS variance erases the HMM gain on some games. Mitigation: keep RattleBot v0.2 as a fallback submission; only activate v0.3 if paired_runner shows Wilson-95 lower bound > 50% vs v0.2.
+- MCTS move selection is slower per iteration than the tight α-β loop; may not reach as deep effective lookahead. Mitigation: tune rollout depth + expansion threshold; run on Linux (tournament env) where the per-iter cost is lower.
+- Opponent's search state (they might be tracking our belief) is not modelled — same limitation as v0.2, not a regression.
+
+#### 6.4 Falsification plan for the hybrid
+
+Before committing to v0.3:
+
+1. **Full N=20 MctsBot-vs-RattleBot result required.** If MCTS's paired win rate has 95% CI crossing 50%, the hybrid's upside is speculative. Still worth trying, but lower priority.
+2. **If N=20 shows MctsBot wins >55%:** strong green light — HMM's SEARCH edge must be so large that plugging it into MCTS's MOVE edge would yield a clearly superior bot. Build v0.3.
+3. **If N=20 shows MctsBot wins 45–55%:** the hybrid is a coin-flip on upside. Build it only if there's tournament time left after other v0.2 → v0.3 improvements land.
+4. **If MctsBot wins <35%:** MCTS isn't actually strong on movement either. The 50-point blowouts in pair 0000 were outliers. Abandon the hybrid.
+
+#### 6.5 Keep `3600-agents/MctsBot/` as an asset
 
 Leave the MctsBot folder in the repo:
 - Useful as a FloorBot-grade backup submission (never crashes in tests, competitive vs Yolanda/George-tier).
