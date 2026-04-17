@@ -137,6 +137,11 @@ def _eval_one_pair(task: dict) -> dict:
         task["agent_a"],
         task["agent_b"],
         task["limit_resources"],
+        # tournament_budget: False preserves the pre-T-30a behavior
+        # (local 360s/20s). BO tunes weights under the same regime as
+        # when they'll run locally; if we ever want to tune under
+        # tournament-accurate 240s/10s, flip to True here.
+        False,
         True,  # quiet — don't spam per-turn board prints
     )
     return paired_runner._run_pair(item)
