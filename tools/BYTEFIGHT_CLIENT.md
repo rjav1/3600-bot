@@ -22,28 +22,54 @@ Pure-Python client for the tournament API. Replaces Chrome MCP / manual-click UI
 
 **Turnstile site key:** `0x4AAAAAACq7wjGZKYGP8Yr0` (bytefight.org). Page URL: `https://bytefight.org/`.
 
-## Auth setup
+## Auto-refresh (Supabase refresh_token)
 
-### 1. Bearer JWT
+Bytefight authenticates via **Supabase** (project ref `pblznfkajrasiprcohrx`). The browser
+stores the full Supabase session — `{access_token, refresh_token, expires_at, user}` — in a
+JS-readable cookie `sb-pblznfkajrasiprcohrx-auth-token` (base64 JSON). Access tokens expire
+every ~1hr; refresh tokens are long-lived and rotate on every use.
 
-The API uses `Authorization: Bearer <jwt>`. The JWT is created when you log in through https://bytefight.org and stored in the browser (localStorage/sessionStorage; not an httpOnly cookie — but Chrome's HAR exporter strips the `authorization` header for security, which is why it's not visible in the recorded HAR).
+`tools/bytefight_auth.py` handles this end-to-end. After a **one-time bootstrap**, the client
+keeps the JWT fresh indefinitely with zero browser interaction:
 
-To extract your JWT:
+- **Pre-flight:** every request calls `ensure_fresh_auth()`, which refreshes when the cached
+  access_token has ≤60s of TTL left. The refresh hits
+  `POST https://pblznfkajrasiprcohrx.supabase.co/auth/v1/token?grant_type=refresh_token`
+  with `{apikey: <anon_key>, content-type: application/json}` and body
+  `{"refresh_token": "..."}`. Response = new access_token + rotated refresh_token,
+  persisted atomically to `bytefight_session.json`.
+- **401 recovery:** if a request still returns 401, client force-refreshes once and retries.
+- **Poller inheritance:** `bytefight_poll.py` uses `BytefightClient` and inherits auto-refresh
+  (though the public endpoints it hits don't need auth anyway).
 
+### One-time bootstrap
+
+1. Log in at `https://bytefight.org` in Chrome.
+2. Have an agent with `claude-in-chrome` MCP run `tools/chrome_snippets/bootstrap_bytefight_session.js`
+   via the `javascript_tool` against the bytefight.org tab. It extracts the session + anon key
+   and downloads `bytefight_session_bootstrap.json` to your Downloads folder.
+3. Run `python tools/bytefight_client.py bootstrap-auth` — auto-detects the Downloads file
+   and imports it into gitignored `tools/bytefight_session.json`.
+
+From then on it's fully headless. Re-bootstrap only if:
+- the user logs out of all devices (invalidates refresh_token), or
+- bytefight changes auth provider.
+
+### CLI auth commands
+
+```bash
+python tools/bytefight_client.py bootstrap-auth              # import Downloads/bytefight_session_bootstrap.json
+python tools/bytefight_client.py bootstrap-auth --from PATH  # import from explicit path
+python tools/bytefight_client.py refresh-auth                # force refresh now (rotates refresh_token)
+python tools/bytefight_client.py auth-status                 # masked summary + TTL
 ```
-1. Open https://bytefight.org (logged in).
-2. DevTools → Application tab → Local Storage → https://bytefight.org
-3. Look for a key like `accessToken`, `jwt`, `auth`, or a `supabase.auth.token`-shaped blob.
-4. Copy the JWT string (begins with `eyJ...`).
-```
 
-Alternatively, in the Network tab, pick any authenticated request (e.g., `GET /api/v1/submission/team/...`), click it, and look at the full Request Headers — the `authorization` header IS actually sent, Chrome just strips it during HAR export.
+### Manual override (legacy)
 
-Store it via any of:
+- env var `BYTEFIGHT_BEARER=eyJ...`
+- CLI flag `--bearer eyJ...`
 
-- `tools/bytefight_session.json`: `{"bearer_token": "eyJ..."}`
-- env var: `export BYTEFIGHT_BEARER=eyJ...`
-- CLI flag: `--bearer eyJ...`
+When an explicit bearer is set, auto-refresh is disabled.
 
 ### 2. Turnstile solver (CAPSOLVER)
 

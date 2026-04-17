@@ -57,6 +57,28 @@ from urllib.parse import urljoin
 
 import requests
 
+# Supabase auth auto-refresh. Local-import-safe if run as script or as package.
+try:
+    from tools.bytefight_auth import (
+        AuthError,
+        Session,
+        describe_session,
+        import_bootstrap,
+        load_session,
+        refresh_if_needed,
+    )
+except ImportError:
+    _HERE = Path(__file__).resolve().parent
+    sys.path.insert(0, str(_HERE))
+    from bytefight_auth import (  # type: ignore[no-redef]
+        AuthError,
+        Session,
+        describe_session,
+        import_bootstrap,
+        load_session,
+        refresh_if_needed,
+    )
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SESSION_PATH_DEFAULT = REPO_ROOT / "tools" / "bytefight_session.json"
@@ -173,23 +195,44 @@ class BytefightClient:
         self.dry_run = dry_run
         self._last_request_at = 0.0
 
-        session = _load_session(self.session_path)
+        session_blob = _load_session(self.session_path)
         self.team_uuid = (
             team_uuid
             or os.environ.get("BYTEFIGHT_TEAM_UUID")
-            or session.get("team_uuid")
+            or session_blob.get("team_uuid")
             or DEFAULT_TEAM_UUID
         )
-        self.bearer_token = (
-            bearer_token
-            or os.environ.get("BYTEFIGHT_BEARER")
-            or session.get("bearer_token")
-        )
-        self._session_blob = session
+        # Explicit bearer override (CLI/env) wins. Otherwise we drive auth from
+        # the Supabase session file via `bytefight_auth`.
+        self.bearer_token = bearer_token or os.environ.get("BYTEFIGHT_BEARER")
+        self._session_blob = session_blob
+        self._auth_session: Session | None = load_session(self.session_path)
         self.http = requests.Session()
         self.http.headers.update(BROWSER_HEADERS)
-        if self.bearer_token:
-            self.http.headers["authorization"] = f"Bearer {self.bearer_token}"
+        self._apply_auth_header()
+
+    def _apply_auth_header(self) -> None:
+        """Sets Authorization header from explicit bearer, else from the loaded Session."""
+        token = self.bearer_token
+        if not token and self._auth_session is not None:
+            token = self._auth_session.access_token
+        if token:
+            self.http.headers["authorization"] = f"Bearer {token}"
+        else:
+            self.http.headers.pop("authorization", None)
+
+    def ensure_fresh_auth(self, *, force: bool = False) -> None:
+        """If we have a Supabase session, refresh it when expiring soon (or forced)."""
+        if self.bearer_token is not None:
+            # Explicit override in play — don't touch Supabase flow.
+            return
+        if not self.session_path.exists():
+            return
+        try:
+            self._auth_session = refresh_if_needed(self.session_path, force=force)
+        except AuthError:
+            raise
+        self._apply_auth_header()
 
     # --- core ---
     def _rate_limit(self) -> None:
@@ -208,7 +251,15 @@ class BytefightClient:
             if "files" in kwargs or "data" in kwargs:
                 print(f"[DRY-RUN]   multipart present")
             raise SystemExit(0)
+        # Opportunistic pre-flight refresh if the current access token is near-expiry.
+        try:
+            self.ensure_fresh_auth()
+        except AuthError:
+            # If pre-flight refresh fails, fall through — the request may still be a
+            # public endpoint (ping, leaderboard, list-matches) that works without auth.
+            pass
         last_exc: Exception | None = None
+        did_401_refresh = False
         for attempt in range(MAX_RETRIES_5XX + 1):
             self._rate_limit()
             try:
@@ -220,7 +271,23 @@ class BytefightClient:
                     continue
                 raise BytefightError(f"{method} {path}: network error after retries: {exc}")
             if resp.status_code == 401:
-                raise BytefightError(f"401 Unauthorized on {method} {path} — Bearer JWT missing or expired")
+                # Try forced refresh exactly once, then retry the same request.
+                if not did_401_refresh and self._auth_session is not None and self.bearer_token is None:
+                    did_401_refresh = True
+                    try:
+                        self.ensure_fresh_auth(force=True)
+                    except AuthError as exc:
+                        raise BytefightError(
+                            f"401 Unauthorized on {method} {path}; refresh failed: {exc}. "
+                            "Re-run `python tools/bytefight_client.py bootstrap-auth`."
+                        )
+                    # Re-apply auth header into the per-call headers kwarg if it pinned one.
+                    # (We already updated the session default headers in _apply_auth_header.)
+                    continue
+                raise BytefightError(
+                    f"401 Unauthorized on {method} {path} — "
+                    "run `python tools/bytefight_client.py bootstrap-auth` to set up Supabase session"
+                )
             if resp.status_code == 403:
                 raise BytefightError(f"403 Forbidden on {method} {path}")
             if resp.status_code == 429:
@@ -407,6 +474,19 @@ class BytefightClient:
 
 
 # --- CLI ---
+def _find_bootstrap_file() -> Path | None:
+    """Look for `bytefight_session_bootstrap.json` in common Downloads locations."""
+    candidates = [
+        Path.home() / "Downloads" / "bytefight_session_bootstrap.json",
+        Path("C:/Users/rahil/Downloads/bytefight_session_bootstrap.json"),
+        REPO_ROOT / "bytefight_session_bootstrap.json",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
+
+
 def _fmt_submissions(subs: list[dict]) -> str:
     rows = ["{:<38}  {:<45}  {:<20}".format("uuid", "name", "validity")]
     for s in subs:
@@ -440,6 +520,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("list-submissions")
     sub.add_parser("list-leaderboard")
     sub.add_parser("storage-status")
+    sub.add_parser("auth-status")
+
+    ba = sub.add_parser("bootstrap-auth", help="import a browser-downloaded bootstrap JSON into session.json")
+    ba.add_argument("--from", dest="from_path", default=None,
+                    help="path to bytefight_session_bootstrap.json (auto-detect Downloads if omitted)")
+
+    ra = sub.add_parser("refresh-auth", help="force a Supabase refresh and persist the new tokens")
 
     lm = sub.add_parser("list-matches")
     lm.add_argument("--page", type=int, default=0)
@@ -480,6 +567,38 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
+        if args.cmd == "bootstrap-auth":
+            from_path = Path(args.from_path) if args.from_path else _find_bootstrap_file()
+            if not from_path or not from_path.exists():
+                print(
+                    "[error] bootstrap file not found. Capture steps:\n"
+                    "  1. Log into https://bytefight.org in Chrome.\n"
+                    "  2. Have an ops agent run `tools/chrome_snippets/bootstrap_bytefight_session.js`\n"
+                    "     via the claude-in-chrome MCP javascript_tool; it downloads\n"
+                    "     `bytefight_session_bootstrap.json` to your Downloads folder.\n"
+                    "  3. Re-run `python tools/bytefight_client.py bootstrap-auth`.",
+                    file=sys.stderr,
+                )
+                return 1
+            sess = import_bootstrap(Path(args.session_path), from_path)
+            print("imported session:")
+            for k, v in describe_session(sess).items():
+                print(f"  {k}: {v}")
+            return 0
+        if args.cmd == "refresh-auth":
+            from bytefight_auth import refresh_if_needed as _refresh  # local name
+            sess = _refresh(Path(args.session_path), force=True)
+            print("refreshed:")
+            for k, v in describe_session(sess).items():
+                print(f"  {k}: {v}")
+            return 0
+        if args.cmd == "auth-status":
+            if client._auth_session is None:
+                print("no session. run `bootstrap-auth`.")
+                return 1
+            for k, v in describe_session(client._auth_session).items():
+                print(f"  {k}: {v}")
+            return 0
         if args.cmd == "ping":
             print("OK" if client.ping() else "FAIL")
         elif args.cmd == "my-team":
