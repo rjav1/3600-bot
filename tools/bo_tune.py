@@ -99,6 +99,12 @@ BOUNDS: List[Tuple[float, float]] = [
     # (higher opp-entropy = opp can't profitably SEARCH = good for us).
     (-1.5, +0.0),   # F17 priming_lockout  (dead-primes count)
     (+0.0, +0.5),   # F18 opp_belief_proxy (opp-entropy after last search)
+    # T-40b (v0.4.0) — F19/F20. F19 is in [0, 1] (fraction of belief
+    # within Manhattan-2 of worker); positive weight — closer = better.
+    # F20 is an integer in [0, 7] (longest run of PRIMED-or-SPACE the
+    # opp could exploit); negative weight — bigger run = bigger threat.
+    (+0.0, +1.5),   # F19 rat_catch_threat_radius
+    (-1.5, +0.0),   # F20 opp_roll_imminence
 ]
 
 # Hard-tuned default (matches RattleBot.heuristic.W_INIT).
@@ -106,6 +112,7 @@ W_INIT: List[float] = [
     1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05,
     0.15, 0.10, 0.10,
     -0.4, 0.1,
+    0.3, -0.6,
 ]
 
 # Light L2 regulariser pulling toward `w_init`. See §2.5 "Objective".

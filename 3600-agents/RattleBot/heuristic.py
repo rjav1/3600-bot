@@ -1,4 +1,4 @@
-"""F2 linear leaf evaluator — v0.3.1 (14 features, + F17/F18).
+"""F2 linear leaf evaluator — v0.4.0 (16 features, + F19/F20).
 
 9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c
 expanded by 3 distance-kernel features (T-20c.1) per
@@ -13,6 +13,10 @@ JIT-compiles the three hot functions (`_ray_reach`,
 module-level `_USE_NUMBA` kill-switch. v0.3.1 (T-30b) adds **F17**
 priming-lockout (count of dead/isolated primes within our reach)
 and **F18** opp-belief-proxy (post-opp-search belief entropy).
+v0.4.0 (T-40b) adds **F19** rat_catch_threat_radius (belief mass
+within Manhattan-2 of our worker) and **F20** opp_roll_imminence
+(longest primed-or-space run the opp could exploit in the near
+future — F8 superset).
 
 Features (all float64, sign-carried by W_INIT):
 
@@ -71,6 +75,19 @@ Features (all float64, sign-carried by W_INIT):
                                   history via `board.opponent_search`;
                                   a richer multi-ply history tracker is
                                   v0.4+.)
+  F19 rat_catch_threat_radius   = Σ_c belief[c] · I(d(worker, c) ≤ 2)
+                                  — prob-weighted "rat is near me" in
+                                  [0, 1]. High = belief concentrated
+                                  close to our worker → next SEARCH is
+                                  cheap and high-EV (T-40b, V04 §c).
+  F20 opp_roll_imminence        = Longest PRIMED-or-SPACE cardinal run
+                                  from opp worker position, in [0, 7].
+                                  Superset of F8 (F8 counts only already
+                                  primed); F20 also counts SPACE so it
+                                  signals looming opp threats even with
+                                  no existing primes. Neg weight — big
+                                  F20 = opp has room to set up a long
+                                  roll (T-40b).
 
   P(c) = best-roll-value-if-worker-stood-at-c (ray scan through
          BLOCKED/CARPET/opp-worker blockers, Manhattan-extended using
@@ -79,7 +96,7 @@ Features (all float64, sign-carried by W_INIT):
 Public API (module-level):
 
     evaluate(board, belief_summary, weights=None) -> float
-    features(board, belief_summary) -> np.ndarray   # shape (14,) float64
+    features(board, belief_summary) -> np.ndarray   # shape (16,) float64
 
 A thin Heuristic class is kept for downstream consumers (search engine).
 
@@ -159,7 +176,7 @@ def is_numba_active() -> bool:
     return bool(_USE_NUMBA and _NUMBA_AVAILABLE)
 
 
-N_FEATURES: int = 14
+N_FEATURES: int = 16
 
 # Terminal eval = (player_points - opp_points) * TERMINAL_SCALE.
 # Chosen >> any realistic non-terminal eval so minimax always prefers
@@ -219,9 +236,25 @@ GAMMA_RESET: float = 0.3
 #                     magnitude because entropy units are nats in
 #                     [0, ln 64] ≈ [0, 4.16], similar scale to F12.
 #
+#  14   F19    +0.3    Σ_c belief[c] · I(Manhattan(worker, c) ≤ 2) — prob-
+#                      weighted "rat is near me right now" signal. Positive:
+#                      higher means we're close to the likely rat location,
+#                      increasing EV of a SEARCH at the argmax or along
+#                      nearby cells. Magnitude scale: feature in [0, 1]
+#                      (fraction of belief within Manhattan-2 of worker).
+#  15   F20    -0.6    Longest primed-or-space run (length 1..7) the opp
+#                      could roll within one ply of priming/moving, from
+#                      their current worker position in any cardinal dir.
+#                      See `_opp_roll_imminence` — this is a SUPERSET of
+#                      F8 (F8 counts only already-PRIMED cells; F20 also
+#                      counts SPACE as "one prime step away from being
+#                      rollable next turn"). Captures looming threats
+#                      where opp has an empty corridor to set up in.
+#                      Negative: big F20 = opp has space to threaten.
+#
 W_INIT: np.ndarray = np.array(
     [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05, 0.15, 0.10, 0.10,
-     -0.4, 0.1],
+     -0.4, 0.1, 0.3, -0.6],
     dtype=np.float64,
 )
 assert W_INIT.shape == (N_FEATURES,)
@@ -270,6 +303,15 @@ _KERNEL_EXP = np.exp(-_LAMBDA_EXP * _MANHATTAN)
 # Step kernel with D_max = 5 — matches §5.1 starter (H6-mid).
 _D_STEP = 5
 _KERNEL_STEP = (_MANHATTAN <= _D_STEP).astype(np.float64)
+
+# T-40b: mask for F19 `rat_catch_threat_radius`. `_NEAR2_MASK[i]` is a
+# 64-dim float64 row where entry j == 1.0 iff Manhattan(i, j) ≤ 2,
+# else 0.0. Per-eval F19 = `np.dot(belief, _NEAR2_MASK[worker_idx])`.
+# "2" was chosen per V04 ADDENDUM §c — rat drift rate per ply is
+# ~1 cell, so within 2 plies a cell-at-Manhattan≤2 is reachable by
+# us OR by the rat meeting us.
+_F19_RADIUS = 2
+_NEAR2_MASK = (_MANHATTAN <= _F19_RADIUS).astype(np.float64)
 
 
 def _popcount(m: int) -> int:
@@ -714,6 +756,53 @@ def _opp_longest_primable(board: board_mod.Board) -> int:
     return best
 
 
+def _opp_roll_imminence(board: board_mod.Board) -> int:
+    """F20 helper: longest run of PRIMED-or-SPACE cells in a cardinal
+    direction from the opponent's worker position. This extends F8's
+    already-primed-only signal by counting SPACE cells as "one prime
+    step away from being rollable next turn", capturing looming threats
+    where the opp has an empty corridor to set up in. Returns an int
+    in [0, 7].
+
+    Spec note (T-40b): team-lead's task description says "longest
+    CARPET roll length in one ply" — but one ply = one action in the
+    engine (SPEC §2), so the literal one-ply-from-current is exactly
+    F8. F20 intentionally uses the strict superset PRIMED-or-SPACE so
+    it provides signal when F8 is zero. If this interpretation needs
+    revision, flip `_F20_INCLUDE_SPACE` below to False.
+
+    Blockers: BLOCKED | CARPET | workers. (CARPET blocks because the
+    opp can't PRIME an already-CARPET cell nor roll through it.)
+    """
+    ox, oy = board.opponent_worker.position
+    blocked = board._blocked_mask
+    carpet = board._carpet_mask
+    pw_bit = 1 << (
+        board.player_worker.position[1] * BOARD_SIZE
+        + board.player_worker.position[0]
+    )
+    ow_bit = 1 << (oy * BOARD_SIZE + ox)
+    workers = pw_bit | ow_bit
+    blockers = (blocked | carpet | workers) & _FULL_MASK
+
+    best = 0
+    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+        k = 0
+        nx, ny = ox + dx, oy + dy
+        while 0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE:
+            bit = 1 << (ny * BOARD_SIZE + nx)
+            if blockers & bit:
+                break
+            k += 1
+            if k == 7:
+                break
+            nx += dx
+            ny += dy
+        if k > best:
+            best = k
+    return best
+
+
 def _belief_com_distance(
     worker_xy, belief_summary: BeliefSummary
 ) -> float:
@@ -850,7 +939,7 @@ def _opp_belief_entropy(
 def features(
     board: board_mod.Board, belief_summary: BeliefSummary
 ) -> np.ndarray:
-    """Compute the 14-feature vector (float64) from the perspective of
+    """Compute the 16-feature vector (float64) from the perspective of
     `board.player_worker`. Fast path for leaf eval.
 
     No allocation beyond the returned array; all sub-calculations reuse
@@ -904,6 +993,17 @@ def features(
     # (no full 64-element copy).
     out[13] = _opp_belief_entropy(board, belief_summary)
 
+    # F19 — rat-catch-threat-radius: prob-weighted fraction of belief
+    # mass within Manhattan ≤ 2 of our worker. One BLAS dot over the
+    # precomputed _NEAR2_MASK row for `worker_idx`.
+    out[14] = float(np.dot(belief_summary.belief, _NEAR2_MASK[worker_idx]))
+
+    # F20 — opp_roll_imminence: longest PRIMED-or-SPACE cardinal run
+    # from the opponent's worker position. Strict superset of F8 (F8 =
+    # PRIMED-only); see `_opp_roll_imminence` docstring for the
+    # spec-interpretation note.
+    out[15] = float(_opp_roll_imminence(board))
+
     return out
 
 
@@ -923,8 +1023,8 @@ def evaluate(
     Non-terminal:
         return float(dot(weights or W_INIT, features(board, belief_summary)))
 
-    Time budget: p99 <= 200 us over 10k random boards at 14 features
-    (v0.3.1 bumped from 150 us for F17/F18 tail; see tests).
+    Time budget: p99 <= 250 us over 10k random boards at 16 features
+    (v0.4 bumped from 200 us in T-40b for F19/F20 tail; see tests).
     """
     if board.is_game_over():
         return TERMINAL_SCALE * float(

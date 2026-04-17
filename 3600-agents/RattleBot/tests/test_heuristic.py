@@ -294,14 +294,21 @@ def test_symmetry():
     # for a fresh default board (opp_search=(None, False)).
     assert 0.0 <= feats_fwd[13] <= math.log(64) + 1e-9
     assert 0.0 <= feats_rev[13] <= math.log(64) + 1e-9
+    # F19 (belief fraction within Manhattan 2 of worker) in [0, 1].
+    # Depends on worker position → perspective-dependent bound only.
+    assert 0.0 <= feats_fwd[14] <= 1.0 + 1e-9
+    assert 0.0 <= feats_rev[14] <= 1.0 + 1e-9
+    # F20 (longest primed-or-space run from opp worker) in [0, 7].
+    assert 0.0 <= feats_fwd[15] <= 7.0
+    assert 0.0 <= feats_rev[15] <= 7.0
 
 
 def test_per_call_timing():
-    """p99 per-call should be <= 200 µs on 10k random boards (v0.3.1 budget
-    bumped from 150 us for the 14-feature vector per team-lead T-30b brief).
+    """p99 per-call should be <= 250 µs on 10k random boards (v0.4 budget
+    bumped from 200 us for the 16-feature vector per team-lead T-40b brief).
 
-    Uses time.perf_counter_ns(). Soft-warns if p99 > 200 µs but hard-fails
-    if median is > 200 µs — that indicates an actual algorithmic regression.
+    Uses time.perf_counter_ns(). Soft-warns if p99 > 250 µs but hard-fails
+    if median is > 250 µs — that indicates an actual algorithmic regression.
     """
     rng = random.Random(0xBEEF)
     n = 10_000
@@ -325,7 +332,7 @@ def test_per_call_timing():
         f"p50={p50:.1f}us  p99={p99:.1f}us  max={p100:.1f}us"
     )
 
-    BUDGET_US = 200.0
+    BUDGET_US = 250.0
     assert p50 < BUDGET_US, (
         f"median eval time {p50:.1f}us exceeds {BUDGET_US}us budget"
     )
@@ -381,10 +388,18 @@ def test_high_max_belief_triggers_search_signal():
     # F18 falls back to belief.entropy — exact same delta as F12 but
     # weighted by W_INIT[13].
     delta_f18 = W_INIT[13] * (bs_high.entropy - bs_low.entropy)
-    analytical = -(delta_f11 + delta_f12 + delta_f13 + delta_f18)
+    # F19 delta: Σ belief[c] · I(d(worker,c)≤2) — depends on where the
+    # peak lands vs worker, so compute from the actual masks.
+    from RattleBot.heuristic import _NEAR2_MASK
+    worker_idx = wy * BOARD_SIZE + wx
+    f19_low = float(np.dot(bs_low.belief, _NEAR2_MASK[worker_idx]))
+    f19_high = float(np.dot(bs_high.belief, _NEAR2_MASK[worker_idx]))
+    delta_f19 = W_INIT[14] * (f19_high - f19_low)
+    # F20 doesn't depend on belief — cancels in the delta.
+    analytical = -(delta_f11 + delta_f12 + delta_f13 + delta_f18 + delta_f19)
     assert abs(observed_drop - analytical) < 1e-6, (
         f"eval delta {observed_drop} diverged from analytical "
-        f"{analytical} — are F5/F7/F8 varying unexpectedly?"
+        f"{analytical} — are F5/F7/F8/F20 varying unexpectedly?"
     )
 
 
@@ -705,6 +720,114 @@ def test_f18_matches_recomputed_entropy():
     assert abs(f18 - ref_entropy) < 1e-9
 
 
+def test_f19_concentrates_when_belief_near_worker():
+    """T-40b F19: when belief is concentrated within Manhattan ≤ 2 of
+    our worker, F19 must be ≈ 1.0. When belief is concentrated outside
+    that radius, F19 must be ≈ 0.0."""
+    board = _fresh_board(
+        player_pos=(3, 3), opp_pos=(5, 3), blockers=False
+    )
+    # Point mass AT worker cell (d=0).
+    bs_on = _point_mass_belief_summary((3, 3))
+    f_on = features(board, bs_on)[14]
+    assert abs(f_on - 1.0) < 1e-9, (
+        f"F19 point-on-worker expected 1.0, got {f_on}"
+    )
+
+    # Point mass at d=2 (e.g. (5, 3) — two cells east of worker).
+    bs_d2 = _point_mass_belief_summary((5, 3))
+    f_d2 = features(board, bs_d2)[14]
+    assert abs(f_d2 - 1.0) < 1e-9, (
+        f"F19 at d=2 expected 1.0 (inclusive), got {f_d2}"
+    )
+
+    # Point mass at d=3 (e.g. (6, 3) — three cells east).
+    bs_d3 = _point_mass_belief_summary((6, 3))
+    f_d3 = features(board, bs_d3)[14]
+    assert abs(f_d3 - 0.0) < 1e-9, f"F19 at d=3 expected 0.0, got {f_d3}"
+
+    # Point mass far away — (0,0) is d=6 from (3,3).
+    bs_far = _point_mass_belief_summary((0, 0))
+    f_far = features(board, bs_far)[14]
+    assert abs(f_far - 0.0) < 1e-9, f"F19 far expected 0.0, got {f_far}"
+
+
+def test_f19_uniform_belief_fraction_matches_near_mask_size():
+    """Under uniform belief (1/64 per cell), F19 = fraction of cells
+    with d ≤ 2 from worker. For worker at center (3,3), that's 13
+    cells (1 + 4 + 8), so F19 = 13/64 = 0.203125."""
+    from RattleBot.heuristic import _NEAR2_MASK
+    board = _fresh_board(
+        player_pos=(3, 3), opp_pos=(0, 0), blockers=False
+    )
+    bs = _uniform_belief_summary()
+    f = features(board, bs)[14]
+    expected = float(_NEAR2_MASK[27].sum()) / 64.0
+    assert abs(f - expected) < 1e-9, (
+        f"F19 uniform expected {expected}, got {f}"
+    )
+
+
+def test_f20_longest_through_primed_or_space():
+    """T-40b F20: longest PRIMED-or-SPACE run in any cardinal direction
+    from opp worker position."""
+    from RattleBot.heuristic import _opp_roll_imminence
+    # Opp at (5, 3), empty board. Longest run in any direction:
+    # West: (4,3)(3,3)(2,3)(1,3)(0,3) = 5 cells; others shorter.
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(5, 3), blockers=False
+    )
+    assert _opp_roll_imminence(board) == 5
+
+    # Block (2, 3) — west run shortens to 2 (4,3)(3,3).
+    # South direction remains 4 ((5,4)(5,5)(5,6)(5,7)).
+    board.set_cell((2, 3), Cell.BLOCKED)
+    assert _opp_roll_imminence(board) == 4
+
+    # Move our worker to (6, 3) — blocks east run at d=1. Longest
+    # remains 4 (south).
+    board.player_worker.position = (6, 3)
+    assert _opp_roll_imminence(board) == 4
+
+
+def test_f20_superset_of_f8():
+    """T-40b F20 superset: for any board, F20 ≥ F8. F8 counts only
+    already-PRIMED cells; F20 also counts SPACE."""
+    from RattleBot.heuristic import (
+        _opp_longest_primable, _opp_roll_imminence,
+    )
+    # Empty board, opp has plenty of space but no primes.
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(3, 3), blockers=False
+    )
+    assert _opp_longest_primable(board) == 0
+    assert _opp_roll_imminence(board) > 0
+
+    # Add primes at (4,3)(5,3). F8 = 2 (primed run east); F20 should
+    # see east run (4,3)(5,3)(6,3)(7,3) = 4 cells of primed-or-space.
+    board.set_cell((4, 3), Cell.PRIMED)
+    board.set_cell((5, 3), Cell.PRIMED)
+    f8 = _opp_longest_primable(board)
+    f20 = _opp_roll_imminence(board)
+    assert f8 == 2
+    assert f20 >= f8
+    assert f20 == 4
+
+
+def test_f20_carpet_blocks_run():
+    """F20 stops at CARPET cells — opp can't prime them nor roll
+    through them."""
+    from RattleBot.heuristic import _opp_roll_imminence
+    board = _fresh_board(
+        player_pos=(0, 0), opp_pos=(3, 3), blockers=False
+    )
+    # East run = (4,3)..(7,3) = 4 space. Plant a CARPET at (5,3):
+    # east run shortens to 1. Longest among other dirs: west=3, north=3,
+    # south=4. Result: 4.
+    board.set_cell((5, 3), Cell.CARPET)
+    assert _opp_roll_imminence(board) == 4
+
+
 def test_class_wrapper_matches_module_fn():
     board = _fresh_board()
     bs = _uniform_belief_summary()
@@ -954,6 +1077,11 @@ def _run_all():
         test_f18_opp_hit_uses_current_entropy,
         test_f18_invalid_loc_falls_back,
         test_f18_matches_recomputed_entropy,
+        test_f19_concentrates_when_belief_near_worker,
+        test_f19_uniform_belief_fraction_matches_near_mask_size,
+        test_f20_longest_through_primed_or_space,
+        test_f20_superset_of_f8,
+        test_f20_carpet_blocks_run,
         test_class_wrapper_matches_module_fn,
         test_weight_shape_validation,
         test_numba_kernels_match_python_reference,

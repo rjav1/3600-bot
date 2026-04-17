@@ -74,7 +74,8 @@ def test_agent_loads_tuned_weights_from_env():
     """agent._load_tuned_weights reads RATTLEBOT_WEIGHTS_JSON."""
     tuned = [0.7, 0.1, 0.1, 1.2, -0.9, -2.5, -0.4, -0.5, -0.03,
              0.2, 0.1, 0.1,
-             -0.3, 0.08]
+             -0.3, 0.08,
+             0.25, -0.5]
     assert len(tuned) == N_FEATURES
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -124,7 +125,8 @@ def test_agent_reads_bare_list_format():
     """weights.json may be a bare JSON list (not wrapped in object)."""
     tuned = [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05,
              0.15, 0.10, 0.10,
-             -0.4, 0.10]
+             -0.4, 0.10,
+             0.3, -0.6]
     assert len(tuned) == N_FEATURES
     with tempfile.NamedTemporaryFile(
         mode="w",
