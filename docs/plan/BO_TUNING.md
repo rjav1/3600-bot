@@ -84,11 +84,23 @@ axis. If Carrie blends multiple decays, (b) also captures that.
 ```
 f(w) = -paired_win_rate(RattleBot(w), opponent, N=args.n_per_trial)
        + REG_LAMBDA * ||w - w_init||_2 / ||w_init||_2
+       + catastrophe_penalty · catastrophe_fraction
 ```
 
 - `REG_LAMBDA = 0.01` — light L2 regulariser toward the hand-tuned
   prior. BO can override if signal is strong (> 0.01 improvement in
   win-rate).
+- `catastrophe_fraction` = fraction of matches where RattleBot's
+  score minus opponent's score is ≤ `--catastrophe-threshold` (default
+  −30 per V01_LOSS_ANALYSIS §6). Biases BO away from weight vectors
+  that occasionally implode (e.g., SEARCH-gate saturation caused the
+  `RattleBot_Yolanda_1.json` −68 pts loss in the v0.1 corpus).
+- `catastrophe_penalty` defaults to 0.0 (disabled). For the real BO
+  run recommended flags per V01_LOSS_ANALYSIS §6:
+  `--catastrophe-penalty 5 --catastrophe-threshold -30`. With
+  penalty = 5 and a vector that causes a catastrophe in *every* match,
+  the objective gets +5 added — enough to dominate even a 100 %
+  win-rate signal and reject the vector.
 - BO minimises; negative win-rate means "lower is better from skopt's
   viewpoint".
 
@@ -137,7 +149,8 @@ python tools/paired_runner.py \
 
 ## 7. How to run
 
-Local tuning (2 hour budget, 25 trials, 10 pairs per trial, 1 worker):
+Local tuning (2 hour budget, 25 trials, 10 pairs per trial, 1 worker)
+with the V01_LOSS_ANALYSIS §6 catastrophe penalty enabled:
 
 ```
 python tools/bo_tune.py \
@@ -145,8 +158,13 @@ python tools/bo_tune.py \
   --n-per-trial 10 \
   --max-trials 25 \
   --max-hours 2 \
+  --catastrophe-penalty 5 \
+  --catastrophe-threshold -30 \
   --seed 0
 ```
+
+Omit `--catastrophe-penalty` (default 0.0) to fall back to the simple
+win-rate objective — use for A/B testing the penalty's effect.
 
 Fast smoke test (3 trials × 1 pair, ~5 min):
 

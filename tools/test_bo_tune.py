@@ -162,11 +162,11 @@ def test_objective_is_deterministic_under_fixed_seed():
         with open(task["weights_path"], "r", encoding="utf-8") as fh:
             w = json.load(fh)["weights"]
         if w[0] >= 1.0:
-            match1 = {"winner": "PLAYER_A"}  # RattleBot-as-A wins
-            match2 = {"winner": "PLAYER_B"}  # RattleBot-as-B wins
+            match1 = {"winner": "PLAYER_A", "a_points": 20, "b_points": 5}
+            match2 = {"winner": "PLAYER_B", "a_points": 5, "b_points": 20}
         else:
-            match1 = {"winner": "PLAYER_B"}
-            match2 = {"winner": "PLAYER_A"}
+            match1 = {"winner": "PLAYER_B", "a_points": 5, "b_points": 20}
+            match2 = {"winner": "PLAYER_A", "a_points": 20, "b_points": 5}
         return {"match1": match1, "match2": match2}
 
     bo_tune._eval_one_pair = fake
@@ -182,20 +182,110 @@ def test_objective_is_deterministic_under_fixed_seed():
                 out_dir=pathlib.Path(tmpdir),
             )
             # Win case: w[0] = 1.5 > 1.0
-            wr1, _, _ = evaluator._evaluate_winrate(
+            wr1, _, _, _ = evaluator._evaluate_winrate(
                 list(bo_tune.W_INIT), trial_index=0
             )
-            wr2, _, _ = evaluator._evaluate_winrate(
+            wr2, _, _, _ = evaluator._evaluate_winrate(
                 list(bo_tune.W_INIT), trial_index=1
             )
             assert wr1 == wr2 == 1.0, f"win_rate not deterministic: {wr1} {wr2}"
             # Loss case: w[0] = 0.5 < 1.0
             lose_w = list(bo_tune.W_INIT)
             lose_w[0] = 0.5
-            wr3, _, _ = evaluator._evaluate_winrate(
+            wr3, _, _, _ = evaluator._evaluate_winrate(
                 lose_w, trial_index=2
             )
             assert wr3 == 0.0
+    finally:
+        bo_tune._eval_one_pair = orig
+
+
+def test_catastrophe_penalty_fires_on_big_losses():
+    """With `catastrophe_penalty=5`, a weight vector that produces 100 %
+    catastrophic losses (score diff <= -30 every match) should get an
+    objective that is 5 units worse than the same win-rate without the
+    penalty."""
+    orig = bo_tune._eval_one_pair
+
+    def fake(task):
+        # Always a catastrophic loss for RattleBot: RB score 0, opp 40
+        # in every match on every side.
+        match1 = {"winner": "PLAYER_B", "a_points": 0, "b_points": 40}
+        match2 = {"winner": "PLAYER_A", "a_points": 40, "b_points": 0}
+        return {"match1": match1, "match2": match2}
+
+    bo_tune._eval_one_pair = fake
+    try:
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as tmpdir:
+            # penalty = 0 — baseline
+            eva_no = bo_tune._Evaluator(
+                opponent="FloorBot",
+                n_per_trial=3,
+                limit_resources=False,
+                n_workers=1,
+                root_seed=0,
+                out_dir=pathlib.Path(tmpdir),
+                catastrophe_penalty=0.0,
+                catastrophe_threshold=-30.0,
+            )
+            w = list(bo_tune.W_INIT)
+            obj_no = eva_no.objective(w)
+            # penalty = 5 — every match a catastrophe, penalty = 5·1.0 = 5
+            eva_pen = bo_tune._Evaluator(
+                opponent="FloorBot",
+                n_per_trial=3,
+                limit_resources=False,
+                n_workers=1,
+                root_seed=0,
+                out_dir=pathlib.Path(tmpdir),
+                catastrophe_penalty=5.0,
+                catastrophe_threshold=-30.0,
+            )
+            obj_pen = eva_pen.objective(w)
+            # obj_pen should be obj_no + 5.0 (all matches catastrophic)
+            assert abs((obj_pen - obj_no) - 5.0) < 1e-9, (
+                f"catastrophe penalty not applied: no={obj_no}, "
+                f"pen={obj_pen}, delta={obj_pen - obj_no} (expected 5.0)"
+            )
+            # And the trial entry records the fraction
+            assert eva_pen.trials[0]["catastrophe_fraction"] == 1.0
+            assert eva_pen.trials[0]["catastrophe_term"] == 5.0
+    finally:
+        bo_tune._eval_one_pair = orig
+
+
+def test_catastrophe_threshold_excludes_small_losses():
+    """A score diff of -10 should NOT count as a catastrophe at default
+    threshold -30. Catastrophe fraction should be 0.0."""
+    orig = bo_tune._eval_one_pair
+
+    def fake(task):
+        # Small losses — -10 each match
+        match1 = {"winner": "PLAYER_B", "a_points": 5, "b_points": 15}
+        match2 = {"winner": "PLAYER_A", "a_points": 15, "b_points": 5}
+        return {"match1": match1, "match2": match2}
+
+    bo_tune._eval_one_pair = fake
+    try:
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as tmpdir:
+            eva = bo_tune._Evaluator(
+                opponent="FloorBot",
+                n_per_trial=2,
+                limit_resources=False,
+                n_workers=1,
+                root_seed=0,
+                out_dir=pathlib.Path(tmpdir),
+                catastrophe_penalty=5.0,
+                catastrophe_threshold=-30.0,
+            )
+            _, _, _, cat_frac = eva._evaluate_winrate(
+                list(bo_tune.W_INIT), trial_index=0
+            )
+            assert cat_frac == 0.0, (
+                f"small-loss catastrophe_frac should be 0, got {cat_frac}"
+            )
     finally:
         bo_tune._eval_one_pair = orig
 
@@ -233,6 +323,8 @@ def _run_all():
         test_agent_reads_bare_list_format,
         test_agent_rejects_bad_shape,
         test_objective_is_deterministic_under_fixed_seed,
+        test_catastrophe_penalty_fires_on_big_losses,
+        test_catastrophe_threshold_excludes_small_losses,
     ]
     fails = 0
     for t in tests:

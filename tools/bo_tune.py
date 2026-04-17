@@ -181,6 +181,8 @@ class _Evaluator:
         n_workers: int,
         root_seed: int,
         out_dir: pathlib.Path,
+        catastrophe_penalty: float = 0.0,
+        catastrophe_threshold: float = -30.0,
     ) -> None:
         self.opponent = opponent
         self.n_per_trial = n_per_trial
@@ -188,6 +190,15 @@ class _Evaluator:
         self.n_workers = n_workers
         self.root_seed = root_seed
         self.out_dir = out_dir
+        # V01_LOSS_ANALYSIS §6: catastrophic losses (e.g., SEARCH-gate
+        # saturation yielding −68 pts) should bias BO away from fragile
+        # weight vectors. Objective augmented with
+        #   catastrophe_penalty · fraction_of_matches_with_diff <= threshold
+        # Penalty of 0 disables (default). V01_LOSS_ANALYSIS recommends
+        # 5.0 with threshold −30 pts; we wire both as knobs so they can
+        # be tuned per run.
+        self.catastrophe_penalty: float = float(catastrophe_penalty)
+        self.catastrophe_threshold: float = float(catastrophe_threshold)
         self.trials: List[dict] = []
         self._best_objective = math.inf
         self._best_w: Optional[List[float]] = None
@@ -196,9 +207,15 @@ class _Evaluator:
 
     def _evaluate_winrate(
         self, w: List[float], trial_index: int
-    ) -> Tuple[float, Tuple[float, float], float]:
+    ) -> Tuple[float, Tuple[float, float], float, float]:
         """Run `self.n_per_trial` paired matches with RattleBot(w) vs
-        the opponent. Returns (win_rate, wilson_ci_95, elapsed_s).
+        the opponent. Returns (win_rate, wilson_ci_95, elapsed_s,
+        catastrophe_fraction).
+
+        catastrophe_fraction = fraction of matches where RattleBot's
+        score minus opponent's score is <= self.catastrophe_threshold.
+        Used by `objective()` to penalise weight vectors that occasion-
+        ally implode (V01_LOSS_ANALYSIS §6).
         """
         # Write the candidate weights to a disposable JSON file so
         # child processes can load them via agent.py:_load_tuned_weights.
@@ -245,30 +262,52 @@ class _Evaluator:
         # Each pair has 2 matches; RattleBot plays as A in match1, as B
         # in match2. Winner strings are "PLAYER_A", "PLAYER_B", "TIE",
         # or "ERROR".
+        # Also count catastrophic matches: those where RattleBot's
+        # score minus opponent's score is <= self.catastrophe_threshold.
+        # Per-match `a_points`/`b_points` come from paired_runner's
+        # _run_single_match (sourced from board.history).
         n_matches = 2 * len(results)
         wins = 0
+        catastrophes = 0
         for pair in results:
-            # match1: RattleBot as A
-            if pair["match1"]["winner"] == "PLAYER_A":
+            m1 = pair["match1"]
+            m2 = pair["match2"]
+            # match1: RattleBot is A
+            if m1["winner"] == "PLAYER_A":
                 wins += 1
-            # match2: RattleBot as B
-            if pair["match2"]["winner"] == "PLAYER_B":
+            r_diff1 = int(m1.get("a_points", 0)) - int(m1.get("b_points", 0))
+            if r_diff1 <= self.catastrophe_threshold:
+                catastrophes += 1
+            # match2: RattleBot is B
+            if m2["winner"] == "PLAYER_B":
                 wins += 1
+            r_diff2 = int(m2.get("b_points", 0)) - int(m2.get("a_points", 0))
+            if r_diff2 <= self.catastrophe_threshold:
+                catastrophes += 1
         win_rate = wins / n_matches if n_matches else 0.0
+        catastrophe_frac = (
+            catastrophes / n_matches if n_matches else 0.0
+        )
         wilson = _wilson_ci(wins, n_matches)
-        return win_rate, wilson, elapsed
+        return win_rate, wilson, elapsed, catastrophe_frac
 
     def objective(self, w) -> float:
-        """skopt callback: returns `-win_rate + REG_LAMBDA * ||w - w0||`.
+        """skopt callback. Returns
+          `-win_rate + REG_LAMBDA*||w-w0||
+            + catastrophe_penalty * catastrophe_fraction`.
 
         skopt minimises; negating win-rate flips the sense so the best
-        vector is the argmin.
+        vector is the argmin. The catastrophe term biases BO away from
+        weight vectors that occasionally implode (V01_LOSS_ANALYSIS §6).
         """
         w = list(map(float, w))
         trial_index = len(self.trials)
-        win_rate, wilson, elapsed = self._evaluate_winrate(w, trial_index)
+        win_rate, wilson, elapsed, cat_frac = self._evaluate_winrate(
+            w, trial_index
+        )
         reg = _regularisation(w)
-        obj = -win_rate + reg
+        cat_term = self.catastrophe_penalty * cat_frac
+        obj = -win_rate + reg + cat_term
         entry = {
             "trial_index": trial_index,
             "weights": w,
@@ -276,6 +315,8 @@ class _Evaluator:
             "wilson95_lo": wilson[0],
             "wilson95_hi": wilson[1],
             "regularisation": reg,
+            "catastrophe_fraction": cat_frac,
+            "catastrophe_term": cat_term,
             "objective": obj,
             "elapsed_s": elapsed,
             "n_matches": 2 * self.n_per_trial,
@@ -289,8 +330,8 @@ class _Evaluator:
         print(
             f"[bo_tune] trial {trial_index:02d}: "
             f"winrate={win_rate:.3f} CI=[{wilson[0]:.3f},{wilson[1]:.3f}] "
-            f"reg={reg:.4f} obj={obj:.4f} "
-            f"best_winrate={self._best_winrate:.3f} "
+            f"reg={reg:.4f} cat={cat_frac:.3f}(+{cat_term:.3f}) "
+            f"obj={obj:.4f} best_winrate={self._best_winrate:.3f} "
             f"elapsed={elapsed:.1f}s",
             flush=True,
         )
@@ -363,6 +404,26 @@ def main():
         default=True,
         help="Disable resource limiting (required on Windows).",
     )
+    parser.add_argument(
+        "--catastrophe-penalty",
+        type=float,
+        default=0.0,
+        help=(
+            "BO objective penalty coefficient for the fraction of matches "
+            "with score-diff <= --catastrophe-threshold (V01_LOSS_ANALYSIS "
+            "§6). 0.0 disables (default). Recommended for the real BO run: "
+            "5.0 (subtracts 5·catastrophe_fraction from win_rate)."
+        ),
+    )
+    parser.add_argument(
+        "--catastrophe-threshold",
+        type=float,
+        default=-30.0,
+        help=(
+            "Score-diff threshold below which a match counts as a "
+            "catastrophe. Default -30 per V01_LOSS_ANALYSIS §6."
+        ),
+    )
     args = parser.parse_args()
 
     if sys.platform.startswith("win") and args.limit_resources:
@@ -392,6 +453,8 @@ def main():
         n_workers=args.parallel,
         root_seed=args.seed,
         out_dir=log_dir,
+        catastrophe_penalty=args.catastrophe_penalty,
+        catastrophe_threshold=args.catastrophe_threshold,
     )
 
     deadline = time.perf_counter() + args.max_hours * 3600.0
@@ -466,6 +529,8 @@ def main():
                 "elapsed_s": elapsed,
                 "bounds": BOUNDS,
                 "w_init": W_INIT,
+                "catastrophe_penalty": args.catastrophe_penalty,
+                "catastrophe_threshold": args.catastrophe_threshold,
                 "trials": evaluator.trials,
                 "best_weights": evaluator._best_w,
                 "best_win_rate": evaluator._best_winrate,
