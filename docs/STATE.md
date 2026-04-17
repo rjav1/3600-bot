@@ -1,6 +1,6 @@
 # STATE — Rolling Snapshot
 
-**Last updated:** 2026-04-17 (dev-heuristic landed **T-20c heuristic 7→9 features** (F8 opp_line_threat + F13 belief_com_distance, 12/12 tests, p99 21.9 µs / 150 µs budget) + **T-20d BO-tune pipeline** (`tools/bo_tune.py` + 8/8 tests, `agent._load_tuned_weights()` env+sibling-file resolution, BO_TUNING.md doc, scikit-optimize==0.10.2 added). Prior: dev-search landed T-20e move-ordering instrumentation.)
+**Last updated:** 2026-04-17 (loss-analyst landed **task #36 V01_LOSS_ANALYSIS.md** — 13 unique RattleBot match corpus. Dominant mistake: **42 % of all carpet rolls are k=1 (−1 pt)** (32 of 76 rolls). Catastrophic failure mode: **SEARCH gate saturation** — 1/13 matches `RattleBot_Yolanda_1.json` had RattleBot search 40/40 turns for −68 pts, worker never moved from spawn (2,3). Top-3 fixes: (1) remove k=1 from move_gen except last resort (+2.5 pts/match), (2) add consecutive-miss guard to SEARCH gate in agent.py:174 (catches catastrophic loss), (3) tempo-penalty feature for plain-step wandering (≥10-plain streak in 3/13 matches). Recommendations for T-20d BO at §6 of audit. Pipeline at `tools/scratch/v01_loss_analysis.py` re-runs on BASELINE_V01_RUN1/2 when those land. Prior: dev-heuristic landed T-20c + T-20d BO-tune pipeline. Prior: dev-search landed T-20e move-ordering instrumentation.)
 **Current phase:** **Phase 3 IN PROGRESS.** BOT_STRATEGY.md v1.1 is the ratified plan. Phase 3 dev wave: T-12 through T-18 complete (v0.1 end-to-end wired, audited).
 **Deadline:** 2026-04-19 23:59
 
