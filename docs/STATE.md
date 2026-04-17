@@ -1,7 +1,7 @@
 # STATE — Rolling Snapshot
 
-**Last updated:** 2026-04-16 (dev-integrator landed T-12 RattleBot scaffold + fully implemented types.py; smoke test vs Yolanda passes).
-**Current phase:** **Phase 3 IN PROGRESS.** BOT_STRATEGY.md v1.1 is the ratified plan. Phase 3 dev wave opened: T-12 complete; T-13/T-14/T-15 (dev-hmm/dev-search/dev-heuristic) now unblocked by the interface lock-in at `3600-agents/RattleBot/types.py`.
+**Last updated:** 2026-04-17 (dev-hmm landed T-13 `rat_belief.py` v0.1 + tests; 13/13 pass; update 0.032 ms/call).
+**Current phase:** **Phase 3 IN PROGRESS.** BOT_STRATEGY.md v1.1 is the ratified plan. Phase 3 dev wave: T-12 complete, T-13 complete, T-14/T-15 (dev-search/dev-heuristic) in progress; integrator wiring (T-18) pending.
 **Deadline:** 2026-04-19 23:59
 
 ## Active agents
@@ -19,6 +19,7 @@
 | strategy-contrarian  | strategy-contrarian  | CONTRARIAN_STRATEGY.md  | completed |
 | strategy-architect   | strategy-architect   | BOT_STRATEGY.md v1.1    | completed |
 | dev-integrator       | dev-integrator       | T-12 RattleBot scaffold | completed |
+| dev-hmm              | dev-hmm              | T-13 rat_belief.py v0.1 | completed |
 
 ## Recent decisions
 
@@ -47,6 +48,7 @@
 - **D-010** (2026-04-17): RattleBot promotion gate tightened — 65 %/100 OR 58 %/200 paired + Albert scrimmage added to T-LIVE-1 + concrete AUDIT_V03.md sign-off. Supersedes D-006's gate conditions.
 - **D-011** (2026-04-17): Five technical fixes — HMM first-turn guard, SEARCH-not-in-tree invariant, drop `top8`, time safety 0.5 s, γ_info=0.5/γ_reset=0.3.
 - **T-12** (2026-04-16): **RattleBot scaffold + `types.py` landed at `3600-agents/RattleBot/`** by dev-integrator. Layout matches BOT_STRATEGY.md v1.1 §3 (agent / rat_belief / search / heuristic / move_gen / time_mgr / zobrist / types). `types.py` fully implemented: `BeliefSummary` (no `top8` per D-011), `TTEntry`, `Undo` (stub), `MoveKey`, plus `TT_FLAG_EXACT/LOWER/UPPER` constants — this is the interface lock-in for dev-hmm/dev-search/dev-heuristic. All other modules are signatures + docstrings + `NotImplementedError('TBD by dev-<role>')`. `agent.py` is a random-valid-move placeholder with embedded `_emergency_fallback` per D-006. Smoke test: `python engine/run_local_agents.py RattleBot Yolanda` → TIE 6-6 by POINTS, 80 rounds, 3.66 s elapsed, no ImportError / no InvalidMove / no crashes. Scaffold total = 561 LOC (slightly over the 400 target; excess is in types.py load-bearing interface docstrings).
+- **T-13** (2026-04-17): **`rat_belief.py` v0.1 + tests landed at `3600-agents/RattleBot/rat_belief.py`** by dev-hmm per BOT_STRATEGY.md v1.1 §3.2 and RESEARCH_HMM_RAT §A–§E. Forward-filter HMM, float64 `(64,)` belief, `p_0 = e_0 @ T^1000` precomputed in `__init__`, canonical 4-step pipeline (predict → opp-search-update → predict → sensor-update) with D-011 first-turn guard (skip steps 1-2 when `is_player_a_turn and turn_count == 0`). Noise-likelihood and clamp-to-0 distance-likelihood LUTs cached at module load; Manhattan LUT 64x64. Public helpers per §E.6: `snapshot`, `restore`, `apply_our_search`, `apply_opp_search`, plus `handle_post_capture_reset` for the agent. Cell types re-read every turn (HMM §D.6). Tests: `3600-agents/RattleBot/tests/test_rat_belief.py` — 13/13 pass (valid distribution, 40-turn normalization, hit reset, miss zero+renorm, first-turn guard vs hand-computed reference, snapshot/restore round-trip, per-call timing budget, stationary-drift check, summary-fields contract). Measured: init 1.03 ms, update **0.032 ms/call** avg over 2000 calls — ~15× under 0.5 ms target, ~60× under 2 ms budget. LOC: rat_belief.py = 262 (over 250 target by 12, all comments/docstrings; trivially trimmable). Non-trivial choice: applied the first-turn guard via `_first_call` boolean gating steps 1-2 (rather than pre-applying a predict in `__init__`) so that `self.p_0` remains the literal `e_0 @ T^1000` for post-capture resets per D.3.
 
 ## Blockers
 
@@ -54,7 +56,7 @@
 
 ## Open loops
 
-- Agent folder `3600-agents/RattleBot/` shipped at T-12 (scaffold + `types.py` only). Real logic lands in T-13 (dev-hmm: `rat_belief.py`) / T-14 (dev-search: `search.py` + `zobrist.py`) / T-15 (dev-heuristic: `heuristic.py`) / T-18 (dev-integrator: `agent.py` wiring).
+- Agent folder `3600-agents/RattleBot/` scaffolding at T-12 plus `rat_belief.py` v0.1 at T-13. Remaining: T-14 (dev-search: `search.py` + `zobrist.py` + `move_gen.py`) / T-15 (dev-heuristic: `heuristic.py`) / T-18 (dev-integrator: `agent.py` wiring).
 - Test infrastructure: Tester-Local paired-match batch runner (T-17) — parallelization with `n_workers = cpu_count()−1` and per-match rat-capture logging are v1.1 requirements.
 - FloorBot (`3600-agents/FloorBot/`) built per D-007. Live upload blocked on LIVE-001 (team creation); ready to activate once the team exists.
 - bytefight.org credentials / session — Tester-Live needs to confirm the user is logged in on Chrome before uploads.
