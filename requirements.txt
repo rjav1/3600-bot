@@ -7,3 +7,6 @@ psutil==6.0.0
 cython==3.0.11
 torch==2.9.0
 pynvml==13.0.1
+# T-20d: Bayesian-optimisation weight tuning pipeline (tools/bo_tune.py).
+# NOT required on the submission machine — only on the local tuning host.
+scikit-optimize==0.10.2

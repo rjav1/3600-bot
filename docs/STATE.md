@@ -1,6 +1,6 @@
 # STATE — Rolling Snapshot
 
-**Last updated:** 2026-04-17 (dev-search landed **T-20e: move-ordering instrumentation + audit** — `Search.get_stats()` exposes hash/killer/history/TT/cutoff counters; 18/18 tests pass; benchmark at 2s budget / d=9 shows TT hit-rate 48.7 %, cutoff_on_first_rate 97.9 %, full ordering stack firing; report at `docs/tests/SEARCH_STATS_V02.md`. Prior: tester-live landed LIVE-004 Yolanda-as-Current submission. Prior: v02-planner landed BOT_STRATEGY_V02_ADDENDUM.md, 5 tasks T-20a..T-20f. Prior: auditor landed AUDIT_V01.md, Verdict PASS (amber).)
+**Last updated:** 2026-04-17 (dev-heuristic landed **T-20c heuristic 7→9 features** (F8 opp_line_threat + F13 belief_com_distance, 12/12 tests, p99 21.9 µs / 150 µs budget) + **T-20d BO-tune pipeline** (`tools/bo_tune.py` + 8/8 tests, `agent._load_tuned_weights()` env+sibling-file resolution, BO_TUNING.md doc, scikit-optimize==0.10.2 added). Prior: dev-search landed T-20e move-ordering instrumentation.)
 **Current phase:** **Phase 3 IN PROGRESS.** BOT_STRATEGY.md v1.1 is the ratified plan. Phase 3 dev wave: T-12 through T-18 complete (v0.1 end-to-end wired, audited).
 **Deadline:** 2026-04-19 23:59
 
