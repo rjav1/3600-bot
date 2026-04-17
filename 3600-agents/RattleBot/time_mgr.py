@@ -1,18 +1,20 @@
-"""Adaptive time controller for RattleBot v0.1.
+"""Adaptive time controller for RattleBot v0.2.
 
 Per BOT_STRATEGY.md v1.1 §3.6, D-004 (0.6x/1.0x/1.6x multipliers, 2.5x
-cap), and D-011 item 4 (0.5 s safety margin matches `check_win`'s
-tie-vs-loss band from GAME_SPEC §7, absorbs GC/JIT pauses).
+surplus cap), D-011 item 4 (0.5 s safety margin matches `check_win`'s
+tie-vs-loss band from GAME_SPEC §7), and BOT_STRATEGY_V02_ADDENDUM §2.1
+/ §2.2 (T-20a: configurable ceiling 6.0 s; T-20b: `TimeManager` is the
+single source of truth for the 0.5 s safety reservation).
 
 Per-turn budget:
-    base = max(0, time_left - SAFETY) / max(1, turns_left)
-    budget = clamp(base * multiplier, min=0.05, max=base * HARD_CAP_MULT)
+    usable  = max(0, time_left - safety_s)
+    base    = usable / max(1, turns_left)
+    budget  = clamp(base * multiplier, min=MIN, max=base * HARD_CAP_MULT)
+    budget  = min(budget, per_turn_ceiling_s)
 
 Classification:
-    critical  -- last 8 plies of the game OR max_mass >= 0.35 (near-cert
-                 rat candidate -- usually our last call to convert info)
-    easy      -- first 4 plies OR max_mass <= 0.05 (very flat belief, no
-                 payoff from deep search)
+    critical  -- last 4 plies OR max_mass >= 0.35
+    easy      -- first 4 plies OR max_mass <= 0.05
     normal    -- everything else
 """
 
@@ -25,26 +27,36 @@ from game import board as board_mod
 
 from .types import BeliefSummary
 
-__all__ = ["TimeManager"]
+__all__ = ["TimeManager", "DEFAULT_PER_TURN_CEILING_S"]
 
 
 SAFETY_S: float = 0.5
 HARD_CAP_MULT: float = 2.5
 _MULTIPLIER = {"easy": 0.6, "normal": 1.0, "critical": 1.6}
 _MIN_BUDGET_S = 0.05
-# Per-turn absolute ceiling. Even with surplus available, v0.1 doesn't
-# benefit from deeper search because the heuristic isn't BO-tuned yet
-# (D-009: BO tuning lands in v0.2). Keeping this ≤ 3 s also makes
-# local self-play ~3× faster for iteration.
-_PER_TURN_CEILING_S: float = 3.0
+# v0.2 default per T-20a / AUDIT_V01 M-01: 6.0 s matches the tournament
+# base budget (240 s / 40 turns). v0.1 shipped 3.0 s as a provisional
+# cap while the heuristic was uncalibrated; with BO-tuned weights the
+# premise is gone and the ceiling is lifted.
+DEFAULT_PER_TURN_CEILING_S: float = 6.0
 
 
 class TimeManager:
-    """Adaptive iterative-deepening time controller."""
+    """Adaptive iterative-deepening time controller.
 
-    def __init__(self, total_budget_s: float = 240.0 - SAFETY_S) -> None:
+    Owns the 0.5 s safety reservation (D-011 item 4). Downstream code
+    (`search.iterative_deepen`) should be invoked with `safety_s=0.0`
+    so the reserve is not double-subtracted — see T-20b / AUDIT_V01 M-02.
+    """
+
+    def __init__(
+        self,
+        total_budget_s: float = 240.0 - SAFETY_S,
+        per_turn_ceiling_s: float = DEFAULT_PER_TURN_CEILING_S,
+    ) -> None:
         self.total_budget_s = float(total_budget_s)
         self.safety_s = SAFETY_S
+        self.per_turn_ceiling_s = float(per_turn_ceiling_s)
         self.cumulative_used: float = 0.0
         self.turn_budgets_planned: List[float] = []
         self.classification_log: List[str] = []
@@ -57,11 +69,15 @@ class TimeManager:
         time_left_fn: Callable[[], float],
         belief_summary: Optional[BeliefSummary] = None,
     ) -> float:
-        """Compute this turn's budget; store start time; return seconds."""
+        """Compute this turn's budget; store start time; return seconds.
+
+        The returned budget already has `safety_s` reserved — callers
+        should pass `safety_s=0.0` into `search.iterative_deepen` to
+        avoid double-subtracting.
+        """
         try:
             time_left = float(time_left_fn())
         except Exception:
-            # Best-effort fallback: use the worker's remaining budget.
             time_left = float(
                 getattr(board.player_worker, "time_left", self.total_budget_s)
             )
@@ -76,8 +92,8 @@ class TimeManager:
         hard_cap = base * HARD_CAP_MULT
         if budget > hard_cap:
             budget = hard_cap
-        if budget > _PER_TURN_CEILING_S:
-            budget = _PER_TURN_CEILING_S
+        if budget > self.per_turn_ceiling_s:
+            budget = self.per_turn_ceiling_s
         if budget < _MIN_BUDGET_S:
             budget = min(_MIN_BUDGET_S, max(0.0, usable))
 
