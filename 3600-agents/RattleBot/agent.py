@@ -1,4 +1,4 @@
-"""RattleBot v0.4-arch-fixes — end-to-end wiring.
+"""RattleBot v0.4.1 — F-1 gate tightening on top of v0.4-arch-fixes.
 
 Entry-point `PlayerAgent` per CLAUDE.md §4 / BOT_STRATEGY.md v1.1 §3.1
 with v0.2 updates from BOT_STRATEGY_V02_ADDENDUM and v0.4 arch-fix-ship
@@ -6,7 +6,11 @@ patches (2026-04-17) from loss-forensics-dual's audit of
 `RattleBot_v03_pureonly_20260417_1022.zip`'s 26.3% bytefight WR:
 
 - F-1: k=1 carpet rolls are forbidden by move_gen (already shipped
-  via T-20f has_non_k1 gate — confirmed intact here).
+  via T-20f has_non_k1 gate — confirmed intact here). v0.4.1
+  (2026-04-18, f1-gate-audit): when the tree is forced into a k=1
+  carpet because move_gen had no non-k1 legal option, the root now
+  swaps it for a SEARCH move if search EV > -1 (i.e. max_mass >
+  1/6). See docs/audit/F1_GATE_AUDIT_APR18.md §5 for derivation.
 - F-2: SEARCH-gate mass floor raised from 1/3 (~0.333) to 0.35, with a
   linear ramp down to 0.30 in the last 10 plies. Replaces v0.2's
   SEARCH_GATE_MASS_FLOOR constant with _search_mass_threshold(board).
@@ -199,7 +203,7 @@ class PlayerAgent:
             else float("nan")
         )
         return (
-            "RattleBot v0.4-arch-fixes — alpha-beta + ID + HMM belief "
+            "RattleBot v0.4.1 — alpha-beta + ID + HMM belief "
             f"(ceiling={ceiling:.1f}s)"
         )
 
@@ -296,6 +300,31 @@ class PlayerAgent:
             )
         if move is None or not self._looks_valid(board, move):
             move = self._emergency_fallback(board)
+        # v0.4.1 F-1 tightening (f1-gate-audit 2026-04-18): if move_gen's
+        # has_non_k1 gate was forced to keep a k=1 carpet (-1 pt) as the
+        # only legal option, try to swap it for a SEARCH move whose EV
+        # (6*max_mass - 2) exceeds -1 — i.e. max_mass > 1/6 ≈ 0.167.
+        # Forced k=1 occurs on corner-pin positions where every plain,
+        # prime, and carpet-k>=2 is illegal. SEARCH EV includes the
+        # information-gain bonus via _best_search_ev's gamma_info term,
+        # so the swap only fires when it's a strict improvement.
+        # See docs/audit/F1_GATE_AUDIT_APR18.md §4 for scenarios.
+        if (
+            int(move.move_type) == int(MoveType.CARPET)
+            and move.roll_length < 2
+            and float(belief_summary.max_mass) > (1.0 / 6.0) + 1e-9
+        ):
+            try:
+                loc, search_ev = self._search._best_search_ev(
+                    board, belief_summary
+                )
+                if loc is not None and search_ev > -1.0:
+                    candidate = Move.search(loc)
+                    if self._looks_valid(board, candidate):
+                        move = candidate
+            except Exception:
+                # Never crash the turn on a defensive swap.
+                pass
         # Record whether we're emitting a SEARCH so the next turn's
         # `_update_consec_search_misses` knows what to compare against.
         self._last_own_move_was_search = (
