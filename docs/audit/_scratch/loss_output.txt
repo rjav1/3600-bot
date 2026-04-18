@@ -1,0 +1,366 @@
+
+======================================================================
+CARRIE — LOSSES (RattleBot=A, B_WIN)
+======================================================================
+
+--- 2e9fb89f  final A=25  B=53  (Δ=-28, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 8, 'PRIME': 16, 'CARPET': 9, 'SEARCH': 7}  k-rolls={1: 1, 2: 5, 3: 2, 4: 1}  searches=7  ratCaught=2  bigRolls(k>=4)=1
+  B=Opp:      mix={'PRIME': 19, 'SEARCH': 6, 'PLAIN': 13, 'CARPET': 2}  k-rolls={2: 1, 3: 1}  searches=6  ratCaught=4  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 17
+  pts@plies: [(9, 8, 10), (19, 9, 16), (29, 12, 23), (39, 14, 34), (49, 17, 39), (59, 22, 47), (69, 25, 51), (79, 25, 53)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('PRIME', None), ('PRIME', None), ('SEARCH', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 4, 'PRIME': 7, 'CARPET': 2, 'SEARCH': 1}, 'mid': {'PRIME': 6, 'CARPET': 5, 'SEARCH': 1, 'PLAIN': 1}, 'late': {'PLAIN': 3, 'PRIME': 3, 'CARPET': 2, 'SEARCH': 5}}
+  B phases: {'early': {'PRIME': 6, 'SEARCH': 1, 'PLAIN': 6}, 'mid': {'PRIME': 7, 'SEARCH': 2, 'CARPET': 1, 'PLAIN': 4}, 'late': {'SEARCH': 3, 'PRIME': 6, 'PLAIN': 3, 'CARPET': 1}}
+
+--- d83a9b8b  final A=24  B=32  (Δ=-8, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 12, 'PRIME': 15, 'SEARCH': 6, 'CARPET': 7}  k-rolls={1: 3, 2: 1, 3: 1, 4: 2}  searches=6  ratCaught=4  bigRolls(k>=4)=2
+  B=Opp:      mix={'PRIME': 14, 'SEARCH': 10, 'PLAIN': 13, 'CARPET': 3}  k-rolls={2: 3}  searches=10  ratCaught=2  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 15
+  pts@plies: [(9, -2, 1), (19, 2, 8), (29, 8, 14), (39, 10, 18), (49, 15, 25), (59, 18, 29), (69, 22, 31), (79, 24, 32)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('SEARCH', None)]
+  B opening: [('PRIME', None), ('PRIME', None), ('SEARCH', None), ('PLAIN', None), ('SEARCH', None)]
+  A phases: {'early': {'PLAIN': 4, 'PRIME': 5, 'SEARCH': 2, 'CARPET': 3}, 'mid': {'PRIME': 5, 'CARPET': 2, 'PLAIN': 3, 'SEARCH': 3}, 'late': {'PRIME': 5, 'CARPET': 2, 'PLAIN': 5, 'SEARCH': 1}}
+  B phases: {'early': {'PRIME': 7, 'SEARCH': 3, 'PLAIN': 3}, 'mid': {'PLAIN': 6, 'PRIME': 5, 'CARPET': 2, 'SEARCH': 1}, 'late': {'PLAIN': 4, 'SEARCH': 6, 'PRIME': 2, 'CARPET': 1}}
+
+--- ab281352  final A=21  B=43  (Δ=-22, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 9, 'PRIME': 21, 'SEARCH': 5, 'CARPET': 5}  k-rolls={2: 3, 4: 1, 5: 1}  searches=5  ratCaught=4  bigRolls(k>=4)=2
+  B=Opp:      mix={'PRIME': 13, 'PLAIN': 14, 'CARPET': 2, 'SEARCH': 11}  k-rolls={2: 1, 3: 1}  searches=11  ratCaught=1  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 21
+  pts@plies: [(9, 2, -2), (19, 6, 12), (29, 9, 20), (39, 16, 29), (49, 14, 28), (59, 16, 32), (69, 19, 35), (79, 21, 43)]
+  A opening: [('PLAIN', None), ('PLAIN', None), ('PRIME', None), ('SEARCH', None), ('SEARCH', None)]
+  B opening: [('PRIME', None), ('PLAIN', None), ('PLAIN', None), ('PRIME', None), ('PLAIN', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 6, 'SEARCH': 3, 'CARPET': 2}, 'mid': {'PRIME': 7, 'CARPET': 2, 'PLAIN': 2, 'SEARCH': 2}, 'late': {'PLAIN': 4, 'PRIME': 8, 'CARPET': 1}}
+  B phases: {'early': {'PRIME': 7, 'PLAIN': 5, 'CARPET': 1}, 'mid': {'PLAIN': 5, 'SEARCH': 7, 'PRIME': 1, 'CARPET': 1}, 'late': {'PLAIN': 4, 'SEARCH': 4, 'PRIME': 5}}
+
+--- c89c9b0f  final A=34  B=52  (Δ=-18, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 13, 'PRIME': 19, 'CARPET': 5, 'SEARCH': 3}  k-rolls={1: 1, 2: 1, 3: 1, 5: 2}  searches=3  ratCaught=5  bigRolls(k>=4)=2
+  B=Opp:      mix={'PRIME': 16, 'SEARCH': 13, 'CARPET': 2, 'PLAIN': 9}  k-rolls={3: 1, 5: 1}  searches=13  ratCaught=2  bigRolls(k>=4)=1
+  delta-open (ply A trails by >=8): 25
+  pts@plies: [(9, 8, 5), (19, 20, 18), (29, 24, 29), (39, 28, 32), (49, 22, 35), (59, 32, 39), (69, 35, 44), (79, 34, 52)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('PRIME', None), ('PRIME', None), ('SEARCH', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 2, 'PRIME': 10, 'CARPET': 2}, 'mid': {'PLAIN': 6, 'CARPET': 2, 'PRIME': 4, 'SEARCH': 1}, 'late': {'PLAIN': 5, 'PRIME': 5, 'CARPET': 1, 'SEARCH': 2}}
+  B phases: {'early': {'PRIME': 8, 'SEARCH': 1, 'CARPET': 1, 'PLAIN': 3}, 'mid': {'PRIME': 2, 'CARPET': 1, 'SEARCH': 7, 'PLAIN': 4}, 'late': {'PRIME': 6, 'SEARCH': 5, 'PLAIN': 2}}
+
+--- 74765a32  final A=48  B=64  (Δ=-16, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 9, 'PRIME': 16, 'CARPET': 9, 'SEARCH': 6}  k-rolls={1: 2, 2: 4, 3: 2, 6: 1}  searches=6  ratCaught=9  bigRolls(k>=4)=1
+  B=Opp:      mix={'SEARCH': 14, 'PRIME': 16, 'CARPET': 3, 'PLAIN': 7}  k-rolls={2: 3}  searches=14  ratCaught=5  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 39
+  pts@plies: [(9, 2, 5), (19, 13, 9), (29, 24, 13), (39, 31, 39), (49, 33, 43), (59, 34, 47), (69, 41, 54), (79, 48, 64)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('SEARCH', None), ('PRIME', None), ('PRIME', None), ('SEARCH', None), ('SEARCH', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 10, 'CARPET': 1}, 'mid': {'PLAIN': 2, 'PRIME': 2, 'SEARCH': 3, 'CARPET': 6}, 'late': {'PLAIN': 4, 'CARPET': 2, 'SEARCH': 3, 'PRIME': 4}}
+  B phases: {'early': {'SEARCH': 6, 'PRIME': 5, 'CARPET': 1, 'PLAIN': 1}, 'mid': {'PRIME': 8, 'SEARCH': 5, 'PLAIN': 1}, 'late': {'SEARCH': 3, 'PRIME': 3, 'PLAIN': 5, 'CARPET': 2}}
+
+--- 6dcdea8c  final A=29  B=39  (Δ=-10, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 10, 'PRIME': 19, 'SEARCH': 4, 'CARPET': 7}  k-rolls={1: 2, 2: 1, 3: 3, 4: 1}  searches=4  ratCaught=6  bigRolls(k>=4)=1
+  B=Opp:      mix={'PRIME': 13, 'PLAIN': 9, 'SEARCH': 14, 'CARPET': 4}  k-rolls={2: 4}  searches=14  ratCaught=1  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 45
+  pts@plies: [(9, 8, 4), (19, 6, 6), (29, 17, 19), (39, 21, 23), (49, 19, 32), (59, 27, 31), (69, 32, 31), (79, 29, 39)]
+  A opening: [('PLAIN', None), ('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('PLAIN', None), ('SEARCH', None), ('PRIME', None), ('CARPET', 2)]
+  A phases: {'early': {'PLAIN': 2, 'PRIME': 11, 'SEARCH': 1}, 'mid': {'CARPET': 5, 'PLAIN': 3, 'SEARCH': 2, 'PRIME': 3}, 'late': {'PLAIN': 5, 'PRIME': 5, 'CARPET': 2, 'SEARCH': 1}}
+  B phases: {'early': {'PRIME': 5, 'PLAIN': 2, 'SEARCH': 5, 'CARPET': 1}, 'mid': {'PRIME': 4, 'SEARCH': 5, 'CARPET': 2, 'PLAIN': 3}, 'late': {'PLAIN': 4, 'PRIME': 4, 'CARPET': 1, 'SEARCH': 4}}
+
+--- 132a3fbd  final A=30  B=48  (Δ=-18, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 14, 'PRIME': 18, 'CARPET': 6, 'SEARCH': 2}  k-rolls={2: 3, 3: 2, 4: 1}  searches=2  ratCaught=7  bigRolls(k>=4)=1
+  B=Opp:      mix={'PLAIN': 9, 'PRIME': 12, 'SEARCH': 17, 'CARPET': 2}  k-rolls={2: 2}  searches=17  ratCaught=2  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 17
+  pts@plies: [(9, -2, 4), (19, 1, 11), (29, 4, 21), (39, 7, 27), (49, 11, 37), (59, 14, 40), (69, 15, 42), (79, 30, 48)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('CARPET', 2), ('PLAIN', None)]
+  B opening: [('PLAIN', None), ('PRIME', None), ('SEARCH', None), ('SEARCH', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 5, 'PRIME': 6, 'CARPET': 3}, 'mid': {'PRIME': 6, 'CARPET': 2, 'SEARCH': 2, 'PLAIN': 3}, 'late': {'PRIME': 6, 'PLAIN': 6, 'CARPET': 1}}
+  B phases: {'early': {'PLAIN': 5, 'PRIME': 5, 'SEARCH': 3}, 'mid': {'PRIME': 5, 'SEARCH': 5, 'PLAIN': 3, 'CARPET': 1}, 'late': {'SEARCH': 9, 'PLAIN': 1, 'PRIME': 2, 'CARPET': 1}}
+
+--- b93942ed  final A=15  B=47  (Δ=-32, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 10, 'PRIME': 20, 'CARPET': 8, 'SEARCH': 2}  k-rolls={1: 1, 2: 3, 3: 2, 4: 1, 5: 1}  searches=2  ratCaught=7  bigRolls(k>=4)=2
+  B=Opp:      mix={'PRIME': 10, 'PLAIN': 11, 'SEARCH': 18, 'CARPET': 1}  k-rolls={1: 1}  searches=18  ratCaught=0  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 11
+  pts@plies: [(9, 5, 5), (19, 3, 15), (29, 7, 19), (39, 11, 26), (49, 13, 30), (59, 7, 32), (69, 20, 40), (79, 15, 47)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('PLAIN', None), ('SEARCH', None), ('PLAIN', None), ('PLAIN', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 8, 'CARPET': 2, 'SEARCH': 1}, 'mid': {'CARPET': 3, 'PLAIN': 4, 'PRIME': 6}, 'late': {'PRIME': 6, 'SEARCH': 1, 'CARPET': 3, 'PLAIN': 3}}
+  B phases: {'early': {'PRIME': 4, 'PLAIN': 5, 'SEARCH': 4}, 'mid': {'PRIME': 4, 'SEARCH': 7, 'PLAIN': 2, 'CARPET': 1}, 'late': {'SEARCH': 7, 'PLAIN': 4, 'PRIME': 2}}
+
+--- c78534cd  final A=37  B=45  (Δ=-8, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 16, 'PRIME': 15, 'CARPET': 7, 'SEARCH': 2}  k-rolls={1: 2, 2: 3, 3: 1, 5: 1}  searches=2  ratCaught=5  bigRolls(k>=4)=1
+  B=Opp:      mix={'PRIME': 17, 'CARPET': 2, 'PLAIN': 13, 'SEARCH': 8}  k-rolls={2: 1, 3: 1}  searches=8  ratCaught=2  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 19
+  pts@plies: [(9, 4, 5), (19, 8, 19), (29, 12, 20), (39, 18, 21), (49, 19, 29), (59, 26, 35), (69, 31, 37), (79, 37, 45)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('CARPET', 2), ('PLAIN', None), ('PLAIN', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 2, 'PRIME': 10, 'CARPET': 2}, 'mid': {'CARPET': 3, 'PLAIN': 4, 'PRIME': 5, 'SEARCH': 1}, 'late': {'CARPET': 2, 'PLAIN': 10, 'SEARCH': 1}}
+  B phases: {'early': {'PRIME': 7, 'CARPET': 1, 'PLAIN': 4, 'SEARCH': 1}, 'mid': {'PRIME': 6, 'SEARCH': 5, 'PLAIN': 3}, 'late': {'PLAIN': 6, 'PRIME': 4, 'SEARCH': 2, 'CARPET': 1}}
+
+--- 503d8eb7  final A=44  B=48  (Δ=-4, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 9, 'PRIME': 22, 'SEARCH': 2, 'CARPET': 7}  k-rolls={1: 1, 2: 1, 3: 4, 4: 1}  searches=2  ratCaught=10  bigRolls(k>=4)=1
+  B=Opp:      mix={'PLAIN': 12, 'SEARCH': 16, 'PRIME': 10, 'CARPET': 2}  k-rolls={2: 1, 3: 1}  searches=16  ratCaught=1  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 14
+  pts@plies: [(9, 5, 11), (19, 6, 14), (29, 12, 24), (39, 15, 28), (49, 22, 33), (59, 25, 40), (69, 33, 45), (79, 44, 48)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('SEARCH', None)]
+  B opening: [('PLAIN', None), ('PLAIN', None), ('SEARCH', None), ('PRIME', None), ('PLAIN', None)]
+  A phases: {'early': {'PLAIN': 4, 'PRIME': 7, 'SEARCH': 1, 'CARPET': 2}, 'mid': {'PRIME': 10, 'CARPET': 2, 'PLAIN': 1}, 'late': {'PLAIN': 4, 'PRIME': 5, 'SEARCH': 1, 'CARPET': 3}}
+  B phases: {'early': {'PLAIN': 5, 'SEARCH': 3, 'PRIME': 4, 'CARPET': 1}, 'mid': {'PLAIN': 6, 'SEARCH': 5, 'PRIME': 2, 'CARPET': 1}, 'late': {'PLAIN': 1, 'SEARCH': 8, 'PRIME': 4}}
+
+--- e4eff274  final A=2  B=57  (Δ=-55, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 10, 'PRIME': 16, 'CARPET': 6, 'SEARCH': 8}  k-rolls={1: 2, 2: 2, 4: 2}  searches=8  ratCaught=2  bigRolls(k>=4)=2
+  B=Opp:      mix={'PLAIN': 19, 'SEARCH': 11, 'PRIME': 8, 'CARPET': 2}  k-rolls={2: 2}  searches=11  ratCaught=7  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 21
+  pts@plies: [(9, 5, 4), (19, 8, 13), (29, 2, 21), (39, 1, 27), (49, 2, 34), (59, 0, 41), (69, 5, 49), (79, 2, 57)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PLAIN', None), ('PRIME', None)]
+  B opening: [('PLAIN', None), ('PLAIN', None), ('SEARCH', None), ('PRIME', None), ('PLAIN', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 10, 'CARPET': 1}, 'mid': {'CARPET': 3, 'SEARCH': 5, 'PLAIN': 4, 'PRIME': 1}, 'late': {'SEARCH': 3, 'CARPET': 2, 'PLAIN': 3, 'PRIME': 5}}
+  B phases: {'early': {'PLAIN': 3, 'SEARCH': 5, 'PRIME': 4, 'CARPET': 1}, 'mid': {'PLAIN': 9, 'SEARCH': 2, 'PRIME': 2, 'CARPET': 1}, 'late': {'PLAIN': 7, 'SEARCH': 4, 'PRIME': 2}}
+
+--- AGGREGATE over 11 matches ---
+  mean A pts=28.1, B pts=48.0, Δ=-19.9
+  A=RattleBot aggregate mix: {'PLAIN': 120, 'PRIME': 197, 'CARPET': 76, 'SEARCH': 47}
+  B=Opp aggregate mix: {'PRIME': 148, 'SEARCH': 138, 'PLAIN': 129, 'CARPET': 25}
+  A=RattleBot k-dist: {1: 15, 2: 27, 3: 18, 4: 10, 5: 5, 6: 1}  avgK=2.55  total_k=76
+  B=Opp k-dist: {1: 1, 2: 18, 3: 5, 5: 1}  avgK=2.28  total_k=25
+  A=RattleBot big rolls (k>=4): 16/76 = 21.1%
+  B=Opp big rolls (k>=4): 1/25 = 4.0%
+  A=RattleBot k=1 rolls: 15/76 = 19.7%
+  B=Opp k=1 rolls: 1/25 = 4.0%
+  A=RattleBot total carpet pts: 236  (avg per game: 21.5)
+  B=Opp total carpet pts: 65  (avg per game: 5.9)
+  A=RattleBot primes placed (+197 pts direct): 197, avg/game=17.9
+  B=Opp primes placed: 148, avg/game=13.5
+  A=RattleBot searches: total=47, avg/game=4.27
+  B=Opp searches: total=138, avg/game=12.55
+  A=RattleBot rat captures: 61 across 11 games (avg 5.55/game)
+  B=Opp rat captures: 27 across 11 games (avg 2.45/game)
+  delta-open (A trails by >=8) ply mean: 22.2  min=11 max=45 n=11/11
+
+======================================================================
+CARRIE — WINS (RattleBot=A, A_WIN) [for contrast]
+======================================================================
+
+--- 14a319d3  final A=39  B=38  (Δ=1, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 15, 'PRIME': 15, 'CARPET': 8, 'SEARCH': 2}  k-rolls={1: 1, 2: 3, 3: 3, 4: 1}  searches=2  ratCaught=8  bigRolls(k>=4)=1
+  B=Opp:      mix={'PRIME': 16, 'CARPET': 3, 'PLAIN': 7, 'SEARCH': 14}  k-rolls={1: 1, 2: 2}  searches=14  ratCaught=1  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 21
+  pts@plies: [(9, 5, 5), (19, 10, 16), (29, 16, 21), (39, 21, 30), (49, 25, 32), (59, 34, 34), (69, 31, 36), (79, 39, 38)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('PRIME', None), ('CARPET', 2), ('PLAIN', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 4, 'PRIME': 7, 'CARPET': 3}, 'mid': {'PRIME': 4, 'PLAIN': 4, 'SEARCH': 1, 'CARPET': 4}, 'late': {'PLAIN': 7, 'PRIME': 4, 'SEARCH': 1, 'CARPET': 1}}
+  B phases: {'early': {'PRIME': 6, 'CARPET': 1, 'PLAIN': 3, 'SEARCH': 3}, 'mid': {'PRIME': 9, 'PLAIN': 1, 'SEARCH': 4}, 'late': {'SEARCH': 7, 'CARPET': 2, 'PLAIN': 3, 'PRIME': 1}}
+
+--- AGGREGATE over 1 matches ---
+  mean A pts=39.0, B pts=38.0, Δ=1.0
+  A=RattleBot aggregate mix: {'PLAIN': 15, 'PRIME': 15, 'CARPET': 8, 'SEARCH': 2}
+  B=Opp aggregate mix: {'PRIME': 16, 'CARPET': 3, 'PLAIN': 7, 'SEARCH': 14}
+  A=RattleBot k-dist: {1: 1, 2: 3, 3: 3, 4: 1}  avgK=2.50  total_k=8
+  B=Opp k-dist: {1: 1, 2: 2}  avgK=1.67  total_k=3
+  A=RattleBot big rolls (k>=4): 1/8 = 12.5%
+  B=Opp big rolls (k>=4): 0/3 = 0.0%
+  A=RattleBot k=1 rolls: 1/8 = 12.5%
+  B=Opp k=1 rolls: 1/3 = 33.3%
+  A=RattleBot total carpet pts: 23  (avg per game: 23.0)
+  B=Opp total carpet pts: 3  (avg per game: 3.0)
+  A=RattleBot primes placed (+15 pts direct): 15, avg/game=15.0
+  B=Opp primes placed: 16, avg/game=16.0
+  A=RattleBot searches: total=2, avg/game=2.00
+  B=Opp searches: total=14, avg/game=14.00
+  A=RattleBot rat captures: 8 across 1 games (avg 8.00/game)
+  B=Opp rat captures: 1 across 1 games (avg 1.00/game)
+  delta-open (A trails by >=8) ply mean: 21.0  min=21 max=21 n=1/1
+
+======================================================================
+MICHAEL/RUSTY-v2.1 — LOSSES (RattleBot=A, B_WIN)
+======================================================================
+
+--- 066fdae3  final A=8  B=47  (Δ=-39, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 9, 'PRIME': 17, 'CARPET': 6, 'SEARCH': 8}  k-rolls={1: 1, 2: 1, 3: 2, 4: 2}  searches=8  ratCaught=4  bigRolls(k>=4)=2
+  B=Opp:      mix={'PRIME': 10, 'PLAIN': 15, 'SEARCH': 14, 'CARPET': 1}  k-rolls={2: 1}  searches=14  ratCaught=3  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 15
+  pts@plies: [(9, 0, 7), (19, 9, 16), (29, 5, 21), (39, 9, 26), (49, 5, 38), (59, 3, 40), (69, 4, 46), (79, 8, 47)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('CARPET', 3), ('PLAIN', None)]
+  B opening: [('PRIME', None), ('PLAIN', None), ('PRIME', None), ('SEARCH', None), ('PLAIN', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 9, 'CARPET': 2}, 'mid': {'CARPET': 3, 'SEARCH': 3, 'PLAIN': 3, 'PRIME': 4}, 'late': {'PRIME': 4, 'CARPET': 1, 'SEARCH': 5, 'PLAIN': 3}}
+  B phases: {'early': {'PRIME': 5, 'PLAIN': 4, 'SEARCH': 4}, 'mid': {'SEARCH': 7, 'PLAIN': 3, 'PRIME': 4}, 'late': {'PLAIN': 8, 'SEARCH': 3, 'PRIME': 1, 'CARPET': 1}}
+
+--- c39d8154  final A=37  B=57  (Δ=-20, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 7, 'PRIME': 20, 'SEARCH': 6, 'CARPET': 7}  k-rolls={1: 1, 2: 2, 3: 2, 4: 1, 5: 1}  searches=6  ratCaught=5  bigRolls(k>=4)=2
+  B=Opp:      mix={'PRIME': 17, 'PLAIN': 9, 'SEARCH': 10, 'CARPET': 4}  k-rolls={2: 3, 3: 1}  searches=10  ratCaught=3  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 11
+  pts@plies: [(9, 3, 7), (19, 10, 22), (29, 14, 26), (39, 18, 31), (49, 18, 35), (59, 26, 38), (69, 31, 46), (79, 37, 57)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PLAIN', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('PRIME', None), ('PLAIN', None), ('PRIME', None), ('PLAIN', None)]
+  A phases: {'early': {'PLAIN': 4, 'PRIME': 5, 'SEARCH': 2, 'CARPET': 3}, 'mid': {'PRIME': 7, 'CARPET': 2, 'SEARCH': 3, 'PLAIN': 1}, 'late': {'PRIME': 8, 'PLAIN': 2, 'SEARCH': 1, 'CARPET': 2}}
+  B phases: {'early': {'PRIME': 7, 'PLAIN': 4, 'SEARCH': 1, 'CARPET': 1}, 'mid': {'PRIME': 4, 'PLAIN': 4, 'SEARCH': 6}, 'late': {'PRIME': 6, 'PLAIN': 1, 'CARPET': 3, 'SEARCH': 3}}
+
+--- 3df15113  final A=26  B=44  (Δ=-18, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 12, 'PRIME': 16, 'CARPET': 5, 'SEARCH': 7}  k-rolls={2: 3, 4: 1, 5: 1}  searches=7  ratCaught=4  bigRolls(k>=4)=2
+  B=Opp:      mix={'PRIME': 16, 'PLAIN': 7, 'CARPET': 3, 'SEARCH': 14}  k-rolls={2: 2, 3: 1}  searches=14  ratCaught=3  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 21
+  pts@plies: [(9, 3, 9), (19, 8, 12), (29, 16, 20), (39, 18, 33), (49, 25, 41), (59, 28, 40), (69, 28, 42), (79, 26, 44)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('CARPET', 4)]
+  B opening: [('PRIME', None), ('PLAIN', None), ('PLAIN', None), ('PRIME', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 5, 'PRIME': 6, 'CARPET': 2, 'SEARCH': 1}, 'mid': {'PRIME': 5, 'SEARCH': 4, 'CARPET': 2, 'PLAIN': 2}, 'late': {'PRIME': 5, 'SEARCH': 2, 'PLAIN': 5, 'CARPET': 1}}
+  B phases: {'early': {'PRIME': 7, 'PLAIN': 3, 'CARPET': 1, 'SEARCH': 2}, 'mid': {'PRIME': 7, 'SEARCH': 5, 'CARPET': 1, 'PLAIN': 1}, 'late': {'CARPET': 1, 'SEARCH': 7, 'PLAIN': 3, 'PRIME': 2}}
+
+--- 56a79715  final A=35  B=50  (Δ=-15, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 13, 'PRIME': 14, 'CARPET': 6, 'SEARCH': 7}  k-rolls={2: 4, 3: 2}  searches=7  ratCaught=6  bigRolls(k>=4)=0
+  B=Opp:      mix={'PRIME': 15, 'PLAIN': 12, 'CARPET': 2, 'SEARCH': 11}  k-rolls={2: 1, 3: 1}  searches=11  ratCaught=5  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 21
+  pts@plies: [(9, 4, 10), (19, 8, 15), (29, 14, 23), (39, 19, 25), (49, 20, 37), (59, 22, 40), (69, 25, 42), (79, 35, 50)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('CARPET', 3), ('SEARCH', None)]
+  B opening: [('PRIME', None), ('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 7, 'CARPET': 2, 'SEARCH': 2}, 'mid': {'CARPET': 3, 'SEARCH': 3, 'PLAIN': 4, 'PRIME': 3}, 'late': {'PRIME': 4, 'CARPET': 1, 'SEARCH': 2, 'PLAIN': 6}}
+  B phases: {'early': {'PRIME': 5, 'PLAIN': 6, 'CARPET': 1, 'SEARCH': 1}, 'mid': {'PLAIN': 3, 'PRIME': 7, 'SEARCH': 3, 'CARPET': 1}, 'late': {'SEARCH': 7, 'PLAIN': 3, 'PRIME': 3}}
+
+--- d71f7f02  final A=38  B=55  (Δ=-17, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 6, 'PRIME': 22, 'CARPET': 7, 'SEARCH': 5}  k-rolls={1: 1, 3: 4, 4: 2}  searches=5  ratCaught=6  bigRolls(k>=4)=2
+  B=Opp:      mix={'PRIME': 16, 'PLAIN': 9, 'SEARCH': 11, 'CARPET': 4}  k-rolls={2: 4}  searches=11  ratCaught=2  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 48
+  pts@plies: [(9, 10, 7), (19, 14, 6), (29, 21, 13), (39, 28, 18), (49, 24, 33), (59, 29, 40), (69, 40, 45), (79, 38, 55)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('CARPET', 4)]
+  B opening: [('PRIME', None), ('PLAIN', None), ('PRIME', None), ('SEARCH', None), ('SEARCH', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 6, 'CARPET': 3, 'SEARCH': 2}, 'mid': {'PRIME': 9, 'CARPET': 2, 'SEARCH': 1, 'PLAIN': 1}, 'late': {'CARPET': 2, 'SEARCH': 2, 'PLAIN': 2, 'PRIME': 7}}
+  B phases: {'early': {'PRIME': 8, 'PLAIN': 2, 'SEARCH': 3}, 'mid': {'PLAIN': 6, 'PRIME': 4, 'SEARCH': 3, 'CARPET': 1}, 'late': {'PRIME': 4, 'SEARCH': 5, 'CARPET': 3, 'PLAIN': 1}}
+
+--- 144a1826  final A=22  B=54  (Δ=-32, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 9, 'PRIME': 21, 'CARPET': 6, 'SEARCH': 4}  k-rolls={1: 1, 2: 1, 3: 2, 4: 1, 5: 1}  searches=4  ratCaught=7  bigRolls(k>=4)=2
+  B=Opp:      mix={'SEARCH': 16, 'PLAIN': 14, 'PRIME': 8, 'CARPET': 2}  k-rolls={2: 2}  searches=16  ratCaught=3  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 6
+  pts@plies: [(9, -2, 5), (19, -1, 15), (29, 4, 24), (39, 3, 25), (49, 7, 29), (59, 9, 33), (69, 19, 47), (79, 22, 54)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('SEARCH', None), ('PLAIN', None), ('SEARCH', None), ('SEARCH', None), ('SEARCH', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 9, 'CARPET': 1, 'SEARCH': 1}, 'mid': {'PRIME': 4, 'CARPET': 3, 'SEARCH': 2, 'PLAIN': 4}, 'late': {'PLAIN': 2, 'PRIME': 8, 'CARPET': 2, 'SEARCH': 1}}
+  B phases: {'early': {'SEARCH': 4, 'PLAIN': 7, 'PRIME': 2}, 'mid': {'PLAIN': 5, 'SEARCH': 6, 'PRIME': 3}, 'late': {'CARPET': 2, 'SEARCH': 6, 'PLAIN': 2, 'PRIME': 3}}
+
+--- 3f5ceec9  final A=34  B=57  (Δ=-23, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 5, 'PRIME': 19, 'CARPET': 9, 'SEARCH': 7}  k-rolls={1: 2, 2: 4, 3: 1, 4: 2}  searches=7  ratCaught=6  bigRolls(k>=4)=2
+  B=Opp:      mix={'PRIME': 12, 'PLAIN': 14, 'SEARCH': 11, 'CARPET': 3}  k-rolls={2: 2, 3: 1}  searches=11  ratCaught=5  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 24
+  pts@plies: [(9, 0, 5), (19, 9, 14), (29, 11, 20), (39, 10, 29), (49, 16, 36), (59, 18, 37), (69, 29, 43), (79, 34, 57)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('PLAIN', None), ('PRIME', None), ('PLAIN', None), ('SEARCH', None)]
+  A phases: {'early': {'PLAIN': 2, 'PRIME': 10, 'CARPET': 1, 'SEARCH': 1}, 'mid': {'CARPET': 5, 'PLAIN': 2, 'SEARCH': 4, 'PRIME': 2}, 'late': {'PLAIN': 1, 'PRIME': 7, 'CARPET': 3, 'SEARCH': 2}}
+  B phases: {'early': {'PRIME': 4, 'PLAIN': 5, 'SEARCH': 4}, 'mid': {'PRIME': 4, 'CARPET': 1, 'PLAIN': 7, 'SEARCH': 2}, 'late': {'PLAIN': 2, 'SEARCH': 5, 'PRIME': 4, 'CARPET': 2}}
+
+--- 7f9c8909  final A=11  B=54  (Δ=-43, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 9, 'PRIME': 18, 'CARPET': 6, 'SEARCH': 7}  k-rolls={1: 1, 2: 1, 3: 2, 4: 1, 5: 1}  searches=7  ratCaught=2  bigRolls(k>=4)=2
+  B=Opp:      mix={'PRIME': 15, 'PLAIN': 10, 'CARPET': 3, 'SEARCH': 12}  k-rolls={2: 2, 3: 1}  searches=12  ratCaught=4  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 17
+  pts@plies: [(9, 4, 4), (19, 5, 13), (29, 10, 26), (39, 6, 25), (49, 4, 30), (59, 8, 35), (69, 6, 44), (79, 11, 54)]
+  A opening: [('PLAIN', None), ('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 9, 'CARPET': 2}, 'mid': {'PLAIN': 3, 'PRIME': 5, 'CARPET': 2, 'SEARCH': 3}, 'late': {'SEARCH': 4, 'PRIME': 4, 'CARPET': 2, 'PLAIN': 3}}
+  B phases: {'early': {'PRIME': 5, 'PLAIN': 5, 'CARPET': 1, 'SEARCH': 2}, 'mid': {'PLAIN': 3, 'PRIME': 6, 'SEARCH': 5}, 'late': {'SEARCH': 5, 'PRIME': 4, 'PLAIN': 2, 'CARPET': 2}}
+
+--- d59cc6ff  final A=23  B=49  (Δ=-26, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 11, 'PRIME': 14, 'SEARCH': 7, 'CARPET': 8}  k-rolls={1: 3, 2: 2, 4: 2, 5: 1}  searches=7  ratCaught=4  bigRolls(k>=4)=3
+  B=Opp:      mix={'SEARCH': 11, 'PRIME': 17, 'PLAIN': 10, 'CARPET': 2}  k-rolls={2: 2}  searches=11  ratCaught=4  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 9
+  pts@plies: [(9, -1, 8), (19, 4, 22), (29, 12, 26), (39, 13, 26), (49, 14, 29), (59, 13, 40), (69, 19, 42), (79, 23, 49)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('SEARCH', None), ('PRIME', None), ('PLAIN', None), ('PLAIN', None), ('PLAIN', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 7, 'SEARCH': 2, 'CARPET': 2}, 'mid': {'PRIME': 3, 'CARPET': 4, 'SEARCH': 2, 'PLAIN': 4}, 'late': {'CARPET': 2, 'SEARCH': 3, 'PLAIN': 4, 'PRIME': 4}}
+  B phases: {'early': {'SEARCH': 2, 'PRIME': 6, 'PLAIN': 4, 'CARPET': 1}, 'mid': {'PRIME': 7, 'PLAIN': 2, 'SEARCH': 5}, 'late': {'PLAIN': 4, 'PRIME': 4, 'SEARCH': 4, 'CARPET': 1}}
+
+--- 2f4b19b2  final A=32  B=50  (Δ=-18, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 11, 'PRIME': 15, 'CARPET': 6, 'SEARCH': 8}  k-rolls={1: 1, 2: 2, 3: 2, 4: 1}  searches=8  ratCaught=6  bigRolls(k>=4)=1
+  B=Opp:      mix={'PRIME': 14, 'PLAIN': 14, 'SEARCH': 11, 'CARPET': 1}  k-rolls={3: 1}  searches=11  ratCaught=5  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 7
+  pts@plies: [(9, 0, 9), (19, 0, 15), (29, 6, 25), (39, 3, 25), (49, 17, 25), (59, 22, 38), (69, 28, 39), (79, 32, 50)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('CARPET', 4)]
+  B opening: [('PRIME', None), ('PRIME', None), ('PLAIN', None), ('SEARCH', None), ('PLAIN', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 8, 'CARPET': 2, 'SEARCH': 1}, 'mid': {'CARPET': 3, 'SEARCH': 3, 'PLAIN': 5, 'PRIME': 2}, 'late': {'SEARCH': 4, 'PLAIN': 3, 'PRIME': 5, 'CARPET': 1}}
+  B phases: {'early': {'PRIME': 5, 'PLAIN': 5, 'SEARCH': 3}, 'mid': {'PRIME': 4, 'PLAIN': 5, 'SEARCH': 5}, 'late': {'PLAIN': 4, 'SEARCH': 3, 'PRIME': 5, 'CARPET': 1}}
+
+--- a3c9e9af  final A=15  B=49  (Δ=-34, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 8, 'PRIME': 19, 'SEARCH': 6, 'CARPET': 7}  k-rolls={1: 1, 2: 1, 3: 4, 4: 1}  searches=6  ratCaught=5  bigRolls(k>=4)=1
+  B=Opp:      mix={'PRIME': 11, 'SEARCH': 16, 'CARPET': 3, 'PLAIN': 10}  k-rolls={2: 3}  searches=16  ratCaught=3  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 8
+  pts@plies: [(9, -4, 5), (19, 3, 11), (29, 5, 14), (39, 2, 18), (49, 13, 25), (59, 15, 36), (69, 22, 44), (79, 15, 49)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('PRIME', None), ('SEARCH', None), ('SEARCH', None), ('SEARCH', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 7, 'SEARCH': 1, 'CARPET': 3}, 'mid': {'PRIME': 8, 'CARPET': 2, 'PLAIN': 2, 'SEARCH': 1}, 'late': {'SEARCH': 4, 'PRIME': 4, 'CARPET': 2, 'PLAIN': 3}}
+  B phases: {'early': {'PRIME': 5, 'SEARCH': 4, 'CARPET': 2, 'PLAIN': 2}, 'mid': {'SEARCH': 6, 'PLAIN': 5, 'PRIME': 2, 'CARPET': 1}, 'late': {'PLAIN': 3, 'SEARCH': 6, 'PRIME': 4}}
+
+--- cd536bc6  final A=26  B=51  (Δ=-25, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 10, 'PRIME': 16, 'SEARCH': 8, 'CARPET': 6}  k-rolls={1: 1, 2: 3, 4: 2}  searches=8  ratCaught=6  bigRolls(k>=4)=2
+  B=Opp:      mix={'PRIME': 12, 'PLAIN': 15, 'SEARCH': 12, 'CARPET': 1}  k-rolls={2: 1}  searches=12  ratCaught=5  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 11
+  pts@plies: [(9, 1, 7), (19, 4, 18), (29, 7, 30), (39, 18, 35), (49, 26, 39), (59, 24, 46), (69, 26, 47), (79, 26, 51)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('SEARCH', None)]
+  B opening: [('PRIME', None), ('PLAIN', None), ('PRIME', None), ('SEARCH', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 5, 'SEARCH': 4, 'CARPET': 2}, 'mid': {'CARPET': 4, 'SEARCH': 1, 'PLAIN': 3, 'PRIME': 5}, 'late': {'SEARCH': 3, 'PLAIN': 4, 'PRIME': 6}}
+  B phases: {'early': {'PRIME': 9, 'PLAIN': 3, 'SEARCH': 1}, 'mid': {'PLAIN': 6, 'PRIME': 2, 'SEARCH': 5, 'CARPET': 1}, 'late': {'PLAIN': 6, 'SEARCH': 6, 'PRIME': 1}}
+
+--- AGGREGATE over 12 matches ---
+  mean A pts=25.6, B pts=51.4, Δ=-25.8
+  A=RattleBot aggregate mix: {'PLAIN': 110, 'PRIME': 211, 'CARPET': 79, 'SEARCH': 80}
+  B=Opp aggregate mix: {'PRIME': 163, 'PLAIN': 139, 'SEARCH': 149, 'CARPET': 29}
+  A=RattleBot k-dist: {1: 13, 2: 24, 3: 21, 4: 16, 5: 5}  avgK=2.70  total_k=79
+  B=Opp k-dist: {2: 23, 3: 6}  avgK=2.21  total_k=29
+  A=RattleBot big rolls (k>=4): 21/79 = 26.6%
+  B=Opp big rolls (k>=4): 0/29 = 0.0%
+  A=RattleBot k=1 rolls: 13/79 = 16.5%
+  B=Opp k=1 rolls: 0/29 = 0.0%
+  A=RattleBot total carpet pts: 265  (avg per game: 22.1)
+  B=Opp total carpet pts: 70  (avg per game: 5.8)
+  A=RattleBot primes placed (+211 pts direct): 211, avg/game=17.6
+  B=Opp primes placed: 163, avg/game=13.6
+  A=RattleBot searches: total=80, avg/game=6.67
+  B=Opp searches: total=149, avg/game=12.42
+  A=RattleBot rat captures: 61 across 12 games (avg 5.08/game)
+  B=Opp rat captures: 45 across 12 games (avg 3.75/game)
+  delta-open (A trails by >=8) ply mean: 16.5  min=6 max=48 n=12/12
+
+======================================================================
+MICHAEL — WINS/DRAW (for contrast)
+======================================================================
+
+--- 0a270755  final A=42  B=33  (Δ=9, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 12, 'PRIME': 17, 'CARPET': 7, 'SEARCH': 4}  k-rolls={1: 2, 2: 1, 3: 4}  searches=4  ratCaught=3  bigRolls(k>=4)=0
+  B=Opp:      mix={'PRIME': 20, 'SEARCH': 5, 'PLAIN': 10, 'CARPET': 5}  k-rolls={2: 4, 4: 1}  searches=5  ratCaught=1  bigRolls(k>=4)=1
+  delta-open (ply A trails by >=8): None
+  pts@plies: [(9, 5, 3), (19, 6, 3), (29, 13, 13), (39, 21, 15), (49, 25, 17), (59, 29, 22), (69, 36, 26), (79, 42, 33)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 5, 'PRIME': 5, 'CARPET': 3, 'SEARCH': 1}, 'mid': {'PRIME': 8, 'CARPET': 1, 'PLAIN': 3, 'SEARCH': 1}, 'late': {'CARPET': 3, 'PLAIN': 4, 'PRIME': 4, 'SEARCH': 2}}
+  B phases: {'early': {'PRIME': 9, 'SEARCH': 2, 'PLAIN': 2}, 'mid': {'PRIME': 6, 'CARPET': 2, 'PLAIN': 3, 'SEARCH': 3}, 'late': {'PRIME': 5, 'PLAIN': 5, 'CARPET': 3}}
+
+--- 2c0babfa  final A=42  B=41  (Δ=1, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 13, 'PRIME': 15, 'CARPET': 8, 'SEARCH': 4}  k-rolls={1: 2, 2: 2, 3: 1, 4: 2, 5: 1}  searches=4  ratCaught=7  bigRolls(k>=4)=3
+  B=Opp:      mix={'PRIME': 16, 'PLAIN': 9, 'SEARCH': 12, 'CARPET': 3}  k-rolls={2: 2, 3: 1}  searches=12  ratCaught=1  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 21
+  pts@plies: [(9, 7, 10), (19, 13, 14), (29, 19, 23), (39, 22, 26), (49, 26, 24), (59, 32, 32), (69, 34, 41), (79, 42, 41)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PRIME', None), ('PRIME', None), ('PLAIN', None), ('SEARCH', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 8, 'CARPET': 2, 'SEARCH': 1}, 'mid': {'CARPET': 3, 'PLAIN': 5, 'PRIME': 4, 'SEARCH': 1}, 'late': {'CARPET': 3, 'PLAIN': 5, 'PRIME': 3, 'SEARCH': 2}}
+  B phases: {'early': {'PRIME': 6, 'PLAIN': 3, 'SEARCH': 3, 'CARPET': 1}, 'mid': {'SEARCH': 5, 'PRIME': 6, 'PLAIN': 3}, 'late': {'SEARCH': 4, 'PLAIN': 3, 'PRIME': 4, 'CARPET': 2}}
+
+--- af017ebc  final A=54  B=54  (Δ=0, reason=POINTS) ---
+  A=RattleBot:  mix={'PLAIN': 10, 'PRIME': 20, 'CARPET': 6, 'SEARCH': 4}  k-rolls={1: 1, 3: 3, 5: 1, 6: 1}  searches=4  ratCaught=10  bigRolls(k>=4)=2
+  B=Opp:      mix={'PLAIN': 14, 'SEARCH': 12, 'PRIME': 12, 'CARPET': 2}  k-rolls={2: 1, 3: 1}  searches=12  ratCaught=1  bigRolls(k>=4)=0
+  delta-open (ply A trails by >=8): 11
+  pts@plies: [(9, 3, 5), (19, 10, 17), (29, 17, 19), (39, 22, 37), (49, 35, 41), (59, 44, 44), (69, 49, 50), (79, 54, 54)]
+  A opening: [('PLAIN', None), ('PRIME', None), ('PRIME', None), ('PRIME', None), ('PRIME', None)]
+  B opening: [('PLAIN', None), ('SEARCH', None), ('PLAIN', None), ('SEARCH', None), ('PRIME', None)]
+  A phases: {'early': {'PLAIN': 3, 'PRIME': 10, 'CARPET': 1}, 'mid': {'SEARCH': 1, 'PRIME': 9, 'CARPET': 1, 'PLAIN': 2}, 'late': {'CARPET': 4, 'PLAIN': 5, 'SEARCH': 3, 'PRIME': 1}}
+  B phases: {'early': {'PLAIN': 4, 'SEARCH': 4, 'PRIME': 4, 'CARPET': 1}, 'mid': {'PLAIN': 2, 'PRIME': 5, 'SEARCH': 6, 'CARPET': 1}, 'late': {'PRIME': 3, 'PLAIN': 8, 'SEARCH': 2}}
+
+--- AGGREGATE over 3 matches ---
+  mean A pts=46.0, B pts=42.7, Δ=3.3
+  A=RattleBot aggregate mix: {'PLAIN': 35, 'PRIME': 52, 'CARPET': 21, 'SEARCH': 12}
+  B=Opp aggregate mix: {'PRIME': 48, 'SEARCH': 29, 'PLAIN': 33, 'CARPET': 10}
+  A=RattleBot k-dist: {1: 5, 2: 3, 3: 8, 4: 2, 5: 2, 6: 1}  avgK=2.81  total_k=21
+  B=Opp k-dist: {2: 7, 3: 2, 4: 1}  avgK=2.40  total_k=10
+  A=RattleBot big rolls (k>=4): 5/21 = 23.8%
+  B=Opp big rolls (k>=4): 1/10 = 10.0%
+  A=RattleBot k=1 rolls: 5/21 = 23.8%
+  B=Opp k=1 rolls: 0/10 = 0.0%
+  A=RattleBot total carpet pts: 80  (avg per game: 26.7)
+  B=Opp total carpet pts: 28  (avg per game: 9.3)
+  A=RattleBot primes placed (+52 pts direct): 52, avg/game=17.3
+  B=Opp primes placed: 48, avg/game=16.0
+  A=RattleBot searches: total=12, avg/game=4.00
+  B=Opp searches: total=29, avg/game=9.67
+  A=RattleBot rat captures: 20 across 3 games (avg 6.67/game)
+  B=Opp rat captures: 3 across 3 games (avg 1.00/game)
+  delta-open (A trails by >=8) ply mean: 16.0  min=11 max=21 n=2/3
