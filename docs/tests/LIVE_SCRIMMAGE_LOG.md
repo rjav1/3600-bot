@@ -958,4 +958,115 @@ Below 55% bar → upload DONE (for record) but set-current NOT executed. Team-le
 - [2026-04-18 10:20:34Z] RUNNING  match=`c344f4f2` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:20 finished=
 - [2026-04-18 10:20:34Z] RUNNING  match=`3f07cbd3` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:20 finished=
 - [2026-04-18 10:20:34Z] RUNNING  match=`30d4ea17` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:20 finished=
+
+- [2026-04-18 10:32:00Z] SUBMITTED match=`4266aecc` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 1 vs Albert)
+- [2026-04-18 10:32:00Z] SUBMITTED match=`019202fb` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 1 vs Albert)
+- [2026-04-18 10:32:00Z] SUBMITTED match=`e91139b2` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 1 vs Albert)
+- [2026-04-18 10:35:00Z] SUBMITTED match=`abccd098` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 1 vs Albert — 429 retry)
+- [2026-04-18 10:35:00Z] SUBMITTED match=`8e68c469` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 1 vs Carrie)
+- [2026-04-18 10:35:00Z] SUBMITTED match=`e4f51f6d` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 1 vs Carrie)
+- [2026-04-18 10:35:00Z] SUBMITTED match=`213f84de` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 1 vs Carrie)
+- [2026-04-18 10:35:00Z] SUBMITTED match=`76079232` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 1 vs Carrie)
+- [2026-04-18 10:38:00Z] SUBMITTED match=`ce114f6b` vs `George` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage result=queued (scrim-v09-validate wave 1 vs George — 429 retry)
+- [2026-04-18 10:38:00Z] SUBMITTED match=`6874f410` vs `George` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage result=queued (scrim-v09-validate wave 1 vs George — 429 retry)
+- [2026-04-18 10:38:00Z] SUBMITTED match=`d5097c55` vs `George` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage result=queued (scrim-v09-validate wave 1 vs George — 429 retry)
 - [2026-04-18 10:20:34Z] RUNNING  match=`f265aaa8` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:20 finished=
+- [2026-04-18 10:22:38Z] RUNNING  match=`e91139b2` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:22 finished=
+- [2026-04-18 10:22:38Z] RUNNING  match=`019202fb` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:22 finished=
+- [2026-04-18 10:22:38Z] RUNNING  match=`4266aecc` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:22 finished=
+- [2026-04-18 10:24:11Z] B_WIN    match=`3bf5d568` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:20 finished=2026-04-18T10:24
+- [2026-04-18 10:26:15Z] RUNNING  match=`8e68c469` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:26 finished=
+- [2026-04-18 10:26:15Z] RUNNING  match=`abccd098` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:25 finished=
+- [2026-04-18 10:26:15Z] B_WIN    match=`f265aaa8` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:20 finished=2026-04-18T10:26
+- [2026-04-18 10:26:46Z] RUNNING  match=`76079232` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:26 finished=
+- [2026-04-18 10:26:46Z] RUNNING  match=`213f84de` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:26 finished=
+- [2026-04-18 10:26:46Z] RUNNING  match=`e4f51f6d` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:26 finished=
+- [2026-04-18 10:26:46Z] B_WIN    match=`c344f4f2` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:20 finished=2026-04-18T10:26
+- [2026-04-18 10:26:46Z] B_WIN    match=`3f07cbd3` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:20 finished=2026-04-18T10:26
+- [2026-04-18 10:26:46Z] B_WIN    match=`30d4ea17` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:20 finished=2026-04-18T10:26
+- [2026-04-18 10:28:48Z] B_WIN    match=`e91139b2` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:22 finished=2026-04-18T10:28
+- [2026-04-18 10:28:48Z] B_WIN    match=`019202fb` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:22 finished=2026-04-18T10:28
+- [2026-04-18 10:28:48Z] B_WIN    match=`4266aecc` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:22 finished=2026-04-18T10:28
+- [2026-04-18 10:30:21Z] RUNNING  match=`d5097c55` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:30 finished=
+- [2026-04-18 10:30:21Z] RUNNING  match=`6874f410` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:30 finished=
+- [2026-04-18 10:30:21Z] RUNNING  match=`ce114f6b` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:30 finished=
+- [2026-04-18 10:32:24Z] B_WIN    match=`e4f51f6d` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:26 finished=2026-04-18T10:32
+- [2026-04-18 10:32:24Z] B_WIN    match=`8e68c469` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:26 finished=2026-04-18T10:32
+- [2026-04-18 10:32:24Z] B_WIN    match=`abccd098` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:25 finished=2026-04-18T10:32
+- [2026-04-18 10:32:54Z] B_WIN    match=`76079232` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:26 finished=2026-04-18T10:32
+- [2026-04-18 10:32:54Z] A_WIN    match=`213f84de` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:26 finished=2026-04-18T10:32
+- [2026-04-18 10:33:56Z] B_WIN    match=`d5097c55` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:30 finished=2026-04-18T10:33
+- [2026-04-18 10:33:56Z] A_WIN    match=`6874f410` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:30 finished=2026-04-18T10:33
+- [2026-04-18 10:33:56Z] B_WIN    match=`ce114f6b` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:30 finished=2026-04-18T10:33
+- [2026-04-18 10:34:57Z] RUNNING  match=`cee54876` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:34 finished=
+- [2026-04-18 10:34:57Z] RUNNING  match=`ca6f96eb` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:34 finished=
+- [2026-04-18 10:34:57Z] RUNNING  match=`24e24e70` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:34 finished=
+- [2026-04-18 10:34:57Z] RUNNING  match=`8c390b39` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:34 finished=
+- [2026-04-18 10:35:28Z] RUNNING  match=`ce4cbf2e` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:35 finished=
+- [2026-04-18 10:35:28Z] RUNNING  match=`5d932ac1` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:35 finished=
+- [2026-04-18 10:35:28Z] RUNNING  match=`1e4acc5d` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:35 finished=
+- [2026-04-18 10:35:28Z] RUNNING  match=`b975e42c` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:35 finished=
+- [2026-04-18 10:41:08Z] B_WIN    match=`5d932ac1` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:35 finished=2026-04-18T10:41
+- [2026-04-18 10:41:08Z] B_WIN    match=`1e4acc5d` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:35 finished=2026-04-18T10:41
+- [2026-04-18 10:41:08Z] B_WIN    match=`b975e42c` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:35 finished=2026-04-18T10:41
+- [2026-04-18 10:41:08Z] B_WIN    match=`cee54876` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:34 finished=2026-04-18T10:40
+- [2026-04-18 10:41:08Z] B_WIN    match=`ca6f96eb` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:34 finished=2026-04-18T10:40
+- [2026-04-18 10:41:08Z] B_WIN    match=`24e24e70` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:34 finished=2026-04-18T10:40
+- [2026-04-18 10:41:08Z] B_WIN    match=`8c390b39` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:34 finished=2026-04-18T10:40
+- [2026-04-18 10:41:38Z] B_WIN    match=`ce4cbf2e` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:35 finished=2026-04-18T10:41
+
+- [2026-04-18 10:46:00Z] SUBMITTED match=`8c390b39` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 2 vs Albert)
+- [2026-04-18 10:46:00Z] SUBMITTED match=`24e24e70` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 2 vs Albert)
+- [2026-04-18 10:46:00Z] SUBMITTED match=`ca6f96eb` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 2 vs Albert)
+- [2026-04-18 10:46:00Z] SUBMITTED match=`cee54876` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 2 vs Albert)
+- [2026-04-18 10:46:30Z] SUBMITTED match=`b975e42c` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 2 vs Carrie)
+- [2026-04-18 10:46:30Z] SUBMITTED match=`1e4acc5d` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 2 vs Carrie)
+- [2026-04-18 10:46:30Z] SUBMITTED match=`5d932ac1` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 2 vs Carrie)
+- [2026-04-18 10:46:30Z] SUBMITTED match=`ce4cbf2e` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 2 vs Carrie)
+- [2026-04-18 10:53:00Z] SUBMITTED match=`cce9e92f` vs `George` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage result=queued (scrim-v09-validate wave 2 vs George — 2x 429 retry)
+- [2026-04-18 10:53:00Z] SUBMITTED match=`2682bbf7` vs `George` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage result=queued (scrim-v09-validate wave 2 vs George — 2x 429 retry)
+- [2026-04-18 10:53:00Z] SUBMITTED match=`9db83d28` vs `George` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage result=queued (scrim-v09-validate wave 2 vs George — 2x 429 retry)
+- [2026-04-18 10:42:09Z] RUNNING  match=`9db83d28` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:41 finished=
+- [2026-04-18 10:42:09Z] RUNNING  match=`2682bbf7` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:41 finished=
+- [2026-04-18 10:42:09Z] RUNNING  match=`cce9e92f` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:41 finished=
+- [2026-04-18 10:45:15Z] A_WIN    match=`2682bbf7` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:41 finished=2026-04-18T10:45
+- [2026-04-18 10:45:46Z] A_WIN    match=`9db83d28` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:41 finished=2026-04-18T10:45
+- [2026-04-18 10:45:46Z] A_WIN    match=`cce9e92f` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:41 finished=2026-04-18T10:45
+- [2026-04-18 10:47:18Z] RUNNING  match=`035fdf37` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:47 finished=
+- [2026-04-18 10:47:18Z] RUNNING  match=`c92f6c61` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:47 finished=
+- [2026-04-18 10:47:18Z] RUNNING  match=`f3f0e44d` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:47 finished=
+- [2026-04-18 10:47:18Z] RUNNING  match=`42f80514` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:47 finished=
+- [2026-04-18 10:47:18Z] RUNNING  match=`a6cb3c05` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:46 finished=
+- [2026-04-18 10:47:18Z] RUNNING  match=`514fef6e` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:46 finished=
+- [2026-04-18 10:47:18Z] RUNNING  match=`b61c4359` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:46 finished=
+- [2026-04-18 10:47:18Z] RUNNING  match=`fd212a8b` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:46 finished=
+- [2026-04-18 10:52:57Z] B_WIN    match=`f3f0e44d` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:47 finished=2026-04-18T10:52
+- [2026-04-18 10:52:57Z] B_WIN    match=`a6cb3c05` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:46 finished=2026-04-18T10:52
+- [2026-04-18 10:52:57Z] B_WIN    match=`514fef6e` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:46 finished=2026-04-18T10:52
+- [2026-04-18 10:52:57Z] B_WIN    match=`b61c4359` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:46 finished=2026-04-18T10:52
+- [2026-04-18 10:52:57Z] B_WIN    match=`fd212a8b` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:46 finished=2026-04-18T10:52
+- [2026-04-18 10:53:29Z] B_WIN    match=`035fdf37` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:47 finished=2026-04-18T10:53
+- [2026-04-18 10:53:29Z] A_WIN    match=`c92f6c61` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:47 finished=2026-04-18T10:52
+- [2026-04-18 10:53:29Z] B_WIN    match=`42f80514` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:47 finished=2026-04-18T10:53
+- [2026-04-18 10:54:00Z] RUNNING  match=`2a013085` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:53 finished=
+- [2026-04-18 10:54:00Z] RUNNING  match=`03f01e3f` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:53 finished=
+- [2026-04-18 10:54:00Z] RUNNING  match=`86004d12` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:53 finished=
+
+- [2026-04-18 11:00:00Z] SUBMITTED match=`fd212a8b` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 3 vs Albert)
+- [2026-04-18 11:00:00Z] SUBMITTED match=`b61c4359` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 3 vs Albert)
+- [2026-04-18 11:00:00Z] SUBMITTED match=`514fef6e` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 3 vs Albert)
+- [2026-04-18 11:00:00Z] SUBMITTED match=`a6cb3c05` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 3 vs Albert)
+- [2026-04-18 11:00:30Z] SUBMITTED match=`42f80514` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 3 vs Carrie)
+- [2026-04-18 11:00:30Z] SUBMITTED match=`f3f0e44d` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 3 vs Carrie)
+- [2026-04-18 11:00:30Z] SUBMITTED match=`c92f6c61` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 3 vs Carrie)
+- [2026-04-18 11:00:30Z] SUBMITTED match=`035fdf37` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 3 vs Carrie)
+- [2026-04-18 11:07:30Z] SUBMITTED match=`86004d12` vs `George` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage result=queued (scrim-v09-validate wave 3 vs George — 2x 429 retry)
+- [2026-04-18 11:07:30Z] SUBMITTED match=`03f01e3f` vs `George` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage result=queued (scrim-v09-validate wave 3 vs George — 2x 429 retry)
+- [2026-04-18 11:07:30Z] SUBMITTED match=`2a013085` vs `George` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage result=queued (scrim-v09-validate wave 3 vs George — 2x 429 retry)
+- [2026-04-18 10:57:36Z] B_WIN    match=`2a013085` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:53 finished=2026-04-18T10:57
+- [2026-04-18 10:57:36Z] A_WIN    match=`03f01e3f` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:53 finished=2026-04-18T10:57
+- [2026-04-18 10:57:36Z] B_WIN    match=`86004d12` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:53 finished=2026-04-18T10:57
+- [2026-04-18 10:59:09Z] RUNNING  match=`0cc66ffb` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:58 finished=
+
+- [2026-04-18 11:14:00Z] SUBMITTED match=`0cc66ffb` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-validate wave 4 vs Albert)
+- [2026-04-18 11:15:00Z] SUBMITTED match=`1fdb7498` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-validate wave 4 vs Carrie — 1x CAPSOLVER fail, 60s retry)
