@@ -107,3 +107,55 @@
 - Role-specific doc (e.g., for researcher: `docs/research/RESEARCH_QUESTIONS.md` once written).
 - `engine/game/*.py` — ground-truth source.
 - `assignment.pdf` — official spec.
+
+**Cron sweep 03:10Z** — BO v7 pace crisis: killed PID 8868 (3 trials in 5.5h, projected 107h), relaunched v8 PID 23708 with --n-per-trial=5 / --max-trials=20 / --max-hours=14. ETA ~17:00 local 2026-04-18. Auditor delivered 61 archived replays + archive_replays.sh. Scrimmage wave in progress (Team57 3/15 finished 2W-1L; Autobots 5/15 finished mixed; Michael 0/15 finished yet; poller live). Option D greenlit by user.
+
+### 2026-04-18T07:27Z — cron sweep
+- v04 Current. Total v04 scrim: 40 terminal (6W/34L = 15%), 48 running, 48 queued. 
+- v04 vs Carrie: 3W/9L = 25% (vs v03 17%) — grade-gate improvement holds.
+- v04 vs Albert/George: ZERO fires landed — prior scrim-mass-v04 dispatcher DIED silently after settle.
+- Rollout N=20 paired: 1 match file, still in-flight (PID 55261 alive).
+- Phase1-shipper still running (~3h in); no v06 upload yet.
+- Phase2-shipper done: v07 UUID bd651aba uploaded, not Current.
+- Bold-swing rollout v08 UUID 6f6cc52c uploaded, N=4 paired 3-1 vs v04.
+- Dispatched scrim-aggressive-v04 for 15 Alb + 15 Geo + 10 Car.
+
+### 2026-04-18T08:32Z — fresh data landed
+- **Paired N=20 v04 vs v03: 55% WR** (CI [34,74]) — v04 marginally better in self-play.
+- **Paired N=20 rollout vs v04: 50% WR** (10-10) — rollout NOT an upgrade, DO NOT promote v08.
+- v04 real-ELO scrims: Carrie 5/17=29% (v03: 17%), George 9/15=60% (v03: 33%), **Albert 1/13=7.7% (v03: 16%)** — Albert regression needs investigation.
+- Aggregate v04: 20W/65L/0T = 23.5%.
+- Dispatched albert-regression-sherlock + scrim-albert-resample (20 more vs Albert).
+
+### 2026-04-18T08:48Z — cron sweep (93 v04 scrims terminal)
+- v04 aggregate: 20W/73L = 21.5% (below v03's ~26%).
+- v04 per-opp: Carrie 5/21=24% (v03 17% ✓), George 9/15=60% (v03 33% ✓), **Albert 1/17=5.9% (v03 17% ✗ WORSE)**, Caspian 0/10.
+- v06 F-2 revert shipping via `v06-f2-revert-ship` (revert threshold to flat 1/3).
+- `scrim-albert-resample` firing 20 more Albert fires (rate-limited, in-flight).
+- `battle-royale-paired` running N=10 v07 vs v04 + v08 vs v07.
+- `rollout-v2-search-fix` running.
+- Warm cron scrim: `ad252865` vs Carrie fired.
+
+### 2026-04-18T09:11Z — cron sweep
+- 94 v04 terminal. 20W/74L = 21.3%. Carrie 5/22=23%, Albert 1/17=5.9% (worsening), George 9/15=60%.
+- v06 ship (f2 revert) still in flight — no commit yet; paired N=10 running.
+- Warm scrim: 781939b7 vs Albert.
+- BO v7 dir dormant (3 files); no active BO.
+
+### 2026-04-18T09:44Z — cron sweep (post-v06 ship)
+- v06 Current (fb6c16dc since ~09:28Z). Early data: 0W/13 terminal (C 0/5, A 0/7, G 0/1) with 13 still RUNNING. Small sample; could be noise, could be worse than v04.
+- battle-royale: rollout vs greedy_opp = 10-10 (50%); greedy vs v04 = 10/20 in-flight.
+- v07b-ratchase (UUID cf60ca06) uploaded, standing by.
+- Warm scrim fired: 540c354f vs Albert (via v06).
+- scrim-v06-validate still firing waves 2-4.
+
+### 2026-04-18T09:51Z — cron sweep
+- v06 terminal: 0W/16 (C 0/5, A 0/8, G 0/3), 21 still running. Wilson upper 19.4% — no clear improvement over v04 yet, could be sample noise.
+- v07b-ratchase (cf60ca06) standing by.
+- BR greedy vs v04: 10/20 still, no summary yet.
+- scrim-v06-validate-resume dispatched for waves 2-4 (30 more fires).
+
+### 2026-04-18T10:12Z — CRITICAL ROLLBACK v06 → v04
+- v06 went 0W/22 with 3.9 expected wins at v04 rates (p<0.02). Falsified F-2 revert theory.
+- Set Current back to v04 (379d5f82).
+- Dispatching v06-loss-diagnostic to understand failure mode.
