@@ -638,3 +638,4 @@ Below 55% bar → upload DONE (for record) but set-current NOT executed. Team-le
 - [2026-04-18 06:10:56Z] RUNNING  match=`6c2a2d32` vs `team12` (ad15cd58) sub=`RattleBot_v04_archfix_20260418_003411.zip` opp_sub=`kp49.zip` reason=scrimmage sched=2026-04-18T06:03 finished=
 - [2026-04-18 06:10:56Z] RUNNING  match=`c0067355` vs `Caspian` (b32c577c) sub=`RattleBot_v04_archfix_20260418_003411.zip` opp_sub=`moriarty_test.zip` reason=scrimmage sched=2026-04-18T06:02 finished=
 - [2026-04-18 06:11:26Z] RUNNING  match=`51eaa77b` vs `Caspian` (b32c577c) sub=`RattleBot_v04_archfix_20260418_003411.zip` opp_sub=`moriarty_test.zip` reason=scrimmage sched=2026-04-18T06:03 finished=
+- [2026-04-18 06:15:29Z] B_WIN    match=`44932152` vs `Team 44` (e43ca53d) sub=`RattleBot_v04_archfix_20260418_003411.zip` opp_sub=`NashV3.zip` reason=scrimmage sched=2026-04-18T05:57 finished=2026-04-18T06:15
