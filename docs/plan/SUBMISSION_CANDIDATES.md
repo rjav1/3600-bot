@@ -185,3 +185,7 @@ New rows go above the "pending" block but below the current filled rows. Require
 - **R-43-02** (low): `C:\Users\rahil\AppData\Local\Temp\` can be cleaned by Windows / user. Before the deadline window, copy the candidate zips to a persistent location (e.g., `C:\Users\rahil\downloads\3600-bot\submissions_archive\`, gitignored) and update paths here.
 - **R-43-03** (medium): The v0.1 snapshot's `__init__.py` imports `from . import rat_belief, search, heuristic, move_gen, time_mgr, zobrist, types`. If ByteFight's sandbox dislikes imports-in-__init__ (unconfirmed — LIVE-002 tested removing __init__.py; LIVE-003 confirmed Yolanda works single-file), the fallback single-file `RattleBot_v01_singlefile` variant would need to be built separately. **Not built this pass.** Suggested follow-up if v0.1 upload fails.
 - **R-43-04** (low): File timestamps in the zip may be 1980-01-01 (zipfile default for writestr). Probably harmless on ByteFight's sandbox which only cares about content. If ByteFight rejects on mtime, switch to `ZipInfo(file_mode=0o644)` with a real date_time.
+
+## Auto-build log (tools/build_submission.py)
+
+| auto | RattleBot_v06_f2_revert | `RattleBot_v06_f2_revert_20260418_052740.zip` | 20260418_052740 | `RattleBot/*.py` | 49305 | `a2b495dbe1e64bf3b3171ea596ce54628bbaeb15bf713618e2ea7ec438d9d877` | weights=—, numba_stripped=False | auto-built |

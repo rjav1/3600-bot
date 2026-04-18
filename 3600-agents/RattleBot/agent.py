@@ -1,9 +1,9 @@
-"""RattleBot v0.4.1 — F-1 gate tightening on top of v0.4-arch-fixes.
+"""RattleBot v0.4.3 — F-2 revert to flat 1/3 SEARCH threshold.
 
 Entry-point `PlayerAgent` per CLAUDE.md §4 / BOT_STRATEGY.md v1.1 §3.1
-with v0.2 updates from BOT_STRATEGY_V02_ADDENDUM and v0.4 arch-fix-ship
-patches (2026-04-17) from loss-forensics-dual's audit of
-`RattleBot_v03_pureonly_20260417_1022.zip`'s 26.3% bytefight WR:
+with v0.2 updates from BOT_STRATEGY_V02_ADDENDUM, v0.4 arch-fix-ship
+patches (2026-04-17), and v0.4.2 phase-1 shipper changes (2026-04-18)
+from CONTRARIAN_APR18.md §1 BS-3 / §2 Phase 1:
 
 - F-1: k=1 carpet rolls are forbidden by move_gen (already shipped
   via T-20f has_non_k1 gate — confirmed intact here). v0.4.1
@@ -11,13 +11,29 @@ patches (2026-04-17) from loss-forensics-dual's audit of
   carpet because move_gen had no non-k1 legal option, the root now
   swaps it for a SEARCH move if search EV > -1 (i.e. max_mass >
   1/6). See docs/audit/F1_GATE_AUDIT_APR18.md §5 for derivation.
-- F-2: SEARCH-gate mass floor raised from 1/3 (~0.333) to 0.35, with a
-  linear ramp down to 0.30 in the last 10 plies. Replaces v0.2's
-  SEARCH_GATE_MASS_FLOOR constant with _search_mass_threshold(board).
+- F-2 (v0.4.3 v06-f2-revert-ship, 2026-04-18): REVERTED to flat 1/3.
+  The 0.35-with-ramp-to-0.30 config caused an Albert regression (WR
+  16% -> 7.7%) per docs/audit/ALBERT_REGRESSION_APR18.md — the higher
+  threshold interacted with F-3's ply-0 PRIME and collapsed our
+  prime-chain extension. F-3 is retained. `_search_mass_threshold`
+  now returns the canonical +EV break-even 1/3 regardless of
+  turns_left. The HIGH/LOW/RAMP constants are kept as dead code for
+  backwards-import compat but are no longer referenced in-code.
 - F-3: On ply 0 (turn_count == 0 / our first play() call), force a
   PRIME move when legal instead of defaulting to the search's
   unguided PLAIN. Priming on ply 0 banks +1 immediately and sets up
   contiguous prime-lines.
+- v0.4.2 BS-3 light (search.py): at the root, penalize each CARPET
+  edge by `0.5 * opp_reach_factor * new_carpet_count` where
+  `opp_reach_factor = popcount(new_carpets ∩ M2(opp)) / max(1, new)`.
+  Stops us rolling big carpets into the opp's 2-step reach, which
+  loss-forensics (Carrie RC-5, Michael RC-3) flagged as the top
+  structural leak.
+- v0.4.2 Opening-PRIME hardening (agent.py): extend `_is_ply_zero`
+  from ply 0 only to plies 0/1/2 (`turns_left >= 38`). Loss-forensics
+  shows Carrie/Rusty open PRIME×3+ while we interspersed PLAIN after
+  F-3. `_ply_zero_prime` is unchanged — it still returns None when
+  no PRIME is legal, so the normal search fires as a safe fallback.
 
 Pre-existing v0.2 knobs:
 - T-20a: per-turn ceiling lifted 3.0 s -> 6.0 s, configurable.
@@ -119,23 +135,27 @@ SEARCH_GATE_MASS_FLOOR: float = SEARCH_GATE_MASS_FLOOR_HIGH
 
 
 def _search_mass_threshold(turns_left: int) -> float:
-    """v0.4 F-2: return the adaptive SEARCH-gate mass threshold.
+    """v0.4.3 F-2 revert: flat SEARCH-gate mass threshold of 1/3.
 
-    >>> _search_mass_threshold(40)
-    0.35
-    >>> _search_mass_threshold(10)
-    0.35
-    >>> abs(_search_mass_threshold(5) - 0.325) < 1e-9
+    v06-f2-revert-ship (2026-04-18): the 0.35 baseline + 0.30 endgame ramp
+    interacted badly with F-3 (ply-0 PRIME) and collapsed our prime-chain
+    extension vs Albert (see docs/audit/ALBERT_REGRESSION_APR18.md). Carrie
+    and George improved but Albert WR dropped 16% -> 7.7%. Fix: revert to
+    the v0.2-era flat 1/3 threshold — the canonical +EV break-even for
+    a +4/-2 search — while keeping F-3's ply-0 PRIME.
+
+    >>> abs(_search_mass_threshold(40) - 1.0 / 3.0) < 1e-9
     True
-    >>> _search_mass_threshold(0)
-    0.3
+    >>> abs(_search_mass_threshold(10) - 1.0 / 3.0) < 1e-9
+    True
+    >>> abs(_search_mass_threshold(5) - 1.0 / 3.0) < 1e-9
+    True
+    >>> abs(_search_mass_threshold(0) - 1.0 / 3.0) < 1e-9
+    True
     """
-    tl = max(0, int(turns_left))
-    if tl >= SEARCH_GATE_RAMP_TURNS:
-        return SEARCH_GATE_MASS_FLOOR_HIGH
-    # Linear ramp from 0.30 at tl=0 to 0.35 at tl=10.
-    span = SEARCH_GATE_MASS_FLOOR_HIGH - SEARCH_GATE_MASS_FLOOR_LOW
-    return SEARCH_GATE_MASS_FLOOR_LOW + span * (tl / float(SEARCH_GATE_RAMP_TURNS))
+    # turns_left retained in signature for call-site compat; flat 1/3 now.
+    _ = turns_left
+    return 1.0 / 3.0
 
 
 __all__ = ["PlayerAgent"]
@@ -203,7 +223,7 @@ class PlayerAgent:
             else float("nan")
         )
         return (
-            "RattleBot v0.4.1 — alpha-beta + ID + HMM belief "
+            "RattleBot v0.4.3 — alpha-beta + ID + HMM belief "
             f"(ceiling={ceiling:.1f}s)"
         )
 
@@ -267,9 +287,9 @@ class PlayerAgent:
                 self._time_mgr.end_turn(0.0)
                 return opening
 
-        # v0.4 F-2: three-condition SEARCH gate with adaptive mass floor.
-        #   (a) max_mass > threshold(turns_left) — 0.35 baseline, ramps
-        #       down to 0.30 in the last 10 plies (F-2 spec).
+        # v0.4.3 F-2 revert: three-condition SEARCH gate with flat 1/3
+        # mass floor (the canonical +EV break-even for +4/-2 search).
+        #   (a) max_mass > 1/3 — belief on a single cell beats EV zero
         #   (b) entropy  < 0.75 * ln(64) ~= 3.12 nats — belief is peaked
         #   (c) consec misses <= 2 — don't death-spiral on a stale peak
         # T-20b: time_mgr owns the 0.5 s reserve; pass safety_s=0.0.
@@ -346,21 +366,32 @@ class PlayerAgent:
         return move
 
     def _is_ply_zero(self, board: board_mod.Board) -> bool:
-        """v0.4 F-3: are we on our first play() call of the game?
+        """v0.4 F-3 (+ v0.4.2 opening-PRIME hardening): are we in the
+        opening window (our plies 0, 1, or 2)?
 
-        Robust to both perspectives. The engine gives us the board
-        from our point of view, so `player_worker.turns_left == 40`
-        is the canonical marker of "no moves made yet by us". We
-        also consult `board.turn_count` as a sanity check — on ply 0
-        it's 0 for player A and 1 for player B.
+        Loss-forensics APR18 shows Carrie/Rusty open PRIME-PRIME-PRIME
+        (≥3 straight primes at game start) while v0.4 only forced PRIME
+        on ply 0 — on plies 1 and 2 the linear leaf eval often falls
+        back to PLAIN because it can't yet see the future-roll value
+        of a third contiguous prime at shallow depth. v0.4.2 extends
+        F-3 to plies 0, 1, 2 under the same "prime if legal" rule.
+
+        Robust to both perspectives. `player_worker.turns_left` starts
+        at 40 and decrements after each of our moves, so:
+            tl == 40 → ply 0
+            tl == 39 → ply 1
+            tl == 38 → ply 2
+        We gate on `tl >= 38` to cover all three. `_ply_zero_prime`
+        itself returns None when no PRIME is legal (e.g. every cardinal
+        direction blocked), so falling through to the normal search
+        remains safe across all three plies.
         """
         try:
             tl = int(getattr(board.player_worker, "turns_left", 0) or 0)
         except Exception:
             tl = 0
-        # turns_left decrements after each of our moves, so 40 <=> we
-        # haven't moved yet.
-        return tl >= 40
+        # v0.4.2: cover plies 0, 1, 2 (tl ∈ {40, 39, 38}).
+        return tl >= 38
 
     def _ply_zero_prime(self, board: board_mod.Board) -> Optional[Move]:
         """v0.4 F-3: return the best legal PRIME move on ply 0, or None.
