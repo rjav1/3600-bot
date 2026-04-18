@@ -952,4 +952,10 @@ Below 55% bar → upload DONE (for record) but set-current NOT executed. Team-le
 - [2026-04-18 10:11:51Z] RUNNING  match=`e1203143` vs `George` (13f7ba71) sub=`RattleBot_v06_f2_revert_20260418_052740.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:11 finished=
 
 - [2026-04-18 10:12:13Z] ROLLBACK — v06 (fb6c16dc) 0W/22 with 3.9 expected wins at v04 rates. Set Current back to v04 (379d5f82). v06 is demonstrably worse than v04; F-2 revert theory falsified.
-- [2026-04-18 10:12:13Z] SUBMITTED match=`e1203143` vs `George` sub=`RattleBot_v04_archfix_20260418_003411.zip` opp_sub=`George.zip` reason=scrimmage result=queued (cron-warm-queue 2026-04-18T10:11Z — v04 again)
+- [2026-04-18 10:12:13Z] SUBMITTED match=`e1203143` vs `George` sub=`RattleBot_v04_archfix_20260418_003411.zip` opp_sub=`George.zip` reason=scrimmage result=queued (cron-warm-queue 2026-04-18T10:11Z — v04 again)- [2026-04-18 10:14:56Z] A_WIN    match=`e1203143` vs `George` (13f7ba71) sub=`RattleBot_v06_f2_revert_20260418_052740.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:11 finished=2026-04-18T10:14
+- [2026-04-18 10:20:03Z] VAL_OK   match=`869afb5d` vs `Team 15` (81513423) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`RattleBot_v09_f3narrow_20260418_061938.zip` reason=validation sched=2026-04-18T10:19 finished=2026-04-18T10:19
+- [2026-04-18 10:20:34Z] RUNNING  match=`3bf5d568` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T10:20 finished=
+- [2026-04-18 10:20:34Z] RUNNING  match=`c344f4f2` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:20 finished=
+- [2026-04-18 10:20:34Z] RUNNING  match=`3f07cbd3` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T10:20 finished=
+- [2026-04-18 10:20:34Z] RUNNING  match=`30d4ea17` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:20 finished=
+- [2026-04-18 10:20:34Z] RUNNING  match=`f265aaa8` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T10:20 finished=

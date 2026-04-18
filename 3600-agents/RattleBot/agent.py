@@ -1,4 +1,14 @@
-"""RattleBot v0.5-ratchase — F_RAT_CHASE walk-catch bonus at the leaf.
+"""RattleBot v0.6-f3-narrow — narrow F-3 back to ply-0-only PRIME.
+
+v0.6-f3-narrow (v09-f3-narrow-ship, 2026-04-17): per
+docs/audit/V06_FAILURE_DIAGNOSIS_APR18.md, v06 bundled TWO changes and
+the F-3 extension from ply-0-only to plies 0/1/2 was the dominant
+liability — 3-forced-PRIMEs placed by 1-ply greedy can't align into
+collinear prime lines, capping all carpet rolls at k=2 (6pt max) while
+Albert builds k=4/5 chains. This ship reverts `_is_ply_zero` to
+`tl == 40` (ply 0 only) while preserving the F-2 flat 1/3 threshold
+and the F_RAT_CHASE leaf bonus from v0.5-ratchase. Prior v0.5-ratchase
+notes (F_RAT_CHASE) preserved below.
 
 v0.5-ratchase (f-rat-chase-impl, 2026-04-18): adds a perspective-
 symmetric F_RAT_CHASE leaf bonus on top of v0.4.3 (F-2 reverted). Per
@@ -236,8 +246,8 @@ class PlayerAgent:
             else float("nan")
         )
         return (
-            "RattleBot v0.5-ratchase — alpha-beta + ID + HMM belief "
-            f"+ F_RAT_CHASE leaf bonus (ceiling={ceiling:.1f}s)"
+            "RattleBot v0.6-f3-narrow — alpha-beta + ID + HMM belief "
+            f"+ F_RAT_CHASE leaf bonus, F-3 ply-0-only (ceiling={ceiling:.1f}s)"
         )
 
     # ------------------------------------------------------------------
@@ -379,32 +389,31 @@ class PlayerAgent:
         return move
 
     def _is_ply_zero(self, board: board_mod.Board) -> bool:
-        """v0.4 F-3 (+ v0.4.2 opening-PRIME hardening): are we in the
-        opening window (our plies 0, 1, or 2)?
+        """v0.6-f3-narrow: are we on ply 0 (our very first play() call)?
 
-        Loss-forensics APR18 shows Carrie/Rusty open PRIME-PRIME-PRIME
-        (≥3 straight primes at game start) while v0.4 only forced PRIME
-        on ply 0 — on plies 1 and 2 the linear leaf eval often falls
-        back to PLAIN because it can't yet see the future-roll value
-        of a third contiguous prime at shallow depth. v0.4.2 extends
-        F-3 to plies 0, 1, 2 under the same "prime if legal" rule.
+        v0.4.2 extended F-3 to plies 0/1/2 (`tl >= 38`) under the
+        theory that 3 forced opening PRIMEs would match Carrie/Rusty.
+        Post-mortem docs/audit/V06_FAILURE_DIAGNOSIS_APR18.md found the
+        opposite: 1-ply greedy PRIMEs on plies 1 and 2 can't align into
+        collinear prime lines, capping all carpet rolls at k=2 (6 pts)
+        while Albert builds k=4/5 chains. v0.6 narrows F-3 back to ply
+        0 only so the search owns plies 1+ and can plan genuine
+        contiguous prime lines.
 
         Robust to both perspectives. `player_worker.turns_left` starts
         at 40 and decrements after each of our moves, so:
             tl == 40 → ply 0
             tl == 39 → ply 1
-            tl == 38 → ply 2
-        We gate on `tl >= 38` to cover all three. `_ply_zero_prime`
-        itself returns None when no PRIME is legal (e.g. every cardinal
-        direction blocked), so falling through to the normal search
-        remains safe across all three plies.
+        Gate on `tl == 40` so ONLY ply 0 triggers the forced PRIME.
+        `_ply_zero_prime` itself returns None when no PRIME is legal,
+        so falling through to the normal search remains safe.
         """
         try:
             tl = int(getattr(board.player_worker, "turns_left", 0) or 0)
         except Exception:
             tl = 0
-        # v0.4.2: cover plies 0, 1, 2 (tl ∈ {40, 39, 38}).
-        return tl >= 38
+        # v0.6-f3-narrow: ply 0 only (tl == 40).
+        return tl == 40
 
     def _ply_zero_prime(self, board: board_mod.Board) -> Optional[Move]:
         """v0.4 F-3: return the best legal PRIME move on ply 0, or None.

@@ -101,6 +101,16 @@ Chrome tab. CAPSOLVER key in `CAPSOLVER_KEY` env var unlocks upload + scrimmage
 
 ## 5. Operational protocols (from prior team)
 
+- **Never-idle protocol (for teammate agents):** when your atomic task finishes:
+  (1) Send MANDATORY SendMessage report to team-lead with results + commit SHA;
+  (2) Run `sleep 300` in Bash; re-check your inbox for new assignments;
+  (3) Repeat sleep 300 loop indefinitely;
+  (4) Do NOT voluntarily terminate — team-lead issues `shutdown_request`
+  explicitly. Guards against accidental permanent idleness.
+- **MANDATORY report-before-idle:** every teammate, every task, must send a
+  SendMessage to team-lead before entering the wait-poll loop. Commit-only is
+  NOT sufficient — team-lead tracks commits via git log but NEEDS the summary
+  message to know the task is done and the verdict/blockers.
 - **PING-FIRST for live-BO edits:** while `bo_pid.txt` exists and the BO PID is
   alive, do NOT Write/Edit `3600-agents/RattleBot/*.py` or `tools/bo_tune.py`,
   not even docstrings. Prior incidents killed 5 BO runs from mid-run

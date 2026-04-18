@@ -189,3 +189,5 @@ New rows go above the "pending" block but below the current filled rows. Require
 ## Auto-build log (tools/build_submission.py)
 
 | auto | RattleBot_v06_f2_revert | `RattleBot_v06_f2_revert_20260418_052740.zip` | 20260418_052740 | `RattleBot/*.py` | 49305 | `a2b495dbe1e64bf3b3171ea596ce54628bbaeb15bf713618e2ea7ec438d9d877` | weights=—, numba_stripped=False | auto-built |
+| auto | RattleBot_v07b_ratchase | `RattleBot_v07b_ratchase_20260418_054302.zip` | 20260418_054302 | `RattleBot/*.py` | 50886 | `cd86dd2b3af26fe10b96d5a7315332991d2dc0787ede1f356e5b3125ee77b1bd` | weights=—, numba_stripped=True | auto-built |
+| auto | RattleBot_v09_f3narrow | `RattleBot_v09_f3narrow_20260418_061938.zip` | 20260418_061938 | `RattleBot/*.py` | 51075 | `56e13132f1c5adaf085c17bd4fac76a4e8acffcb667c6b2b8e73b41b09a1c65e` | weights=—, numba_stripped=False | auto-built |
