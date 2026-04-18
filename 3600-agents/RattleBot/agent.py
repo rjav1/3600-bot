@@ -1,4 +1,17 @@
-"""RattleBot v0.4.3 — F-2 revert to flat 1/3 SEARCH threshold.
+"""RattleBot v0.5-ratchase — F_RAT_CHASE walk-catch bonus at the leaf.
+
+v0.5-ratchase (f-rat-chase-impl, 2026-04-18): adds a perspective-
+symmetric F_RAT_CHASE leaf bonus on top of v0.4.3 (F-2 reverted). Per
+docs/audit/ALBERT_WIN_PATTERN_APR18.md, our Albert wins correlate with
+walk-catching the rat (13 walk-catches in 3 wins = +52 pts), while
+HMM-gated SEARCH fired too rarely to exploit those opportunities. The
+new leaf term rewards our worker being on high-belief cells by adding
+`F_RAT_CHASE_COEF (=4.0) * (belief[player_pos] - belief[opp_pos])` to
+every non-terminal leaf evaluation — sharp enough to push search
+toward walk-catches without disturbing F-2/F-3.
+
+Prior v0.4.3 ship notes (preserved below for context):
+
 
 Entry-point `PlayerAgent` per CLAUDE.md §4 / BOT_STRATEGY.md v1.1 §3.1
 with v0.2 updates from BOT_STRATEGY_V02_ADDENDUM, v0.4 arch-fix-ship
@@ -223,8 +236,8 @@ class PlayerAgent:
             else float("nan")
         )
         return (
-            "RattleBot v0.4.3 — alpha-beta + ID + HMM belief "
-            f"(ceiling={ceiling:.1f}s)"
+            "RattleBot v0.5-ratchase — alpha-beta + ID + HMM belief "
+            f"+ F_RAT_CHASE leaf bonus (ceiling={ceiling:.1f}s)"
         )
 
     # ------------------------------------------------------------------

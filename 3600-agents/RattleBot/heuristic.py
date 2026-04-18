@@ -3,7 +3,7 @@
 # Worker subprocesses re-import from disk each trial; mid-run edits
 # contaminate BO score averages. Kill BO first
 # (taskkill //PID $(cat bo_pid.txt) //T //F), then edit, then relaunch.
-"""F2 linear leaf evaluator — v0.4.2 (19 features, + F10/F24 exploits).
+"""F2 linear leaf evaluator — v0.5-ratchase (19 features + F_RAT_CHASE bonus).
 
 9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c
 expanded by 3 distance-kernel features (T-20c.1) per
@@ -23,6 +23,21 @@ bonus (count of PRIMED/CARPET cardinal neighbors of opp worker PLUS
 primed-line endpoints cardinal-adjacent to our worker) and **F24**
 opp_wasted_primes (mirror of F17 against opp's reachable primes —
 rewards maneuvering opp into wasteful priming).
+v0.5-ratchase (ALBERT_WIN_PATTERN_APR18): adds a **F_RAT_CHASE**
+walk-catch bonus applied at the leaf eval — a perspective-symmetric
+reward of `F_RAT_CHASE_COEF * (belief[player_pos] - belief[opp_pos])`.
+Rationale: Albert wins correlate with walk-catching rats (13 walk-
+catches across 3 wins = +52 pts), while HMM-gated SEARCH fired too
+rarely to exploit those opportunities. Incentivising our worker to
+*be on* high-belief cells turns incidental mobility into free walk-
+catches. Distinct from F19 `rat_catch_threat_radius` (Manhattan-2
+smoothed sum) because F_RAT_CHASE reads belief at the exact current
+cell — sharper signal that rewards *landing on* the peak, not just
+being near it. Not in the linear feature vector because the
+coefficient is pinned to the raw walk-catch value (+4 pt per catch)
+and shouldn't be BO-tuned; it's an additive leaf bonus outside the
+W_INIT linear combination. See
+`docs/audit/ALBERT_WIN_PATTERN_APR18.md` for the win/loss analysis.
 v0.4.1 (T-40-EXPLOIT-1) adds **F22** prime_steal_bonus (sum over
 primed lines where our worker is closer to a line endpoint than the
 opponent, weighted by CARPET_POINTS_TABLE[k]; rewards positions where
@@ -170,6 +185,7 @@ __all__ = [
     "W_INIT",
     "N_FEATURES",
     "TERMINAL_SCALE",
+    "F_RAT_CHASE_COEF",
     "Heuristic",
     "clear_p_vec_cache",
     "p_vec_cache_info",
@@ -231,6 +247,16 @@ N_FEATURES: int = 19
 # Chosen >> any realistic non-terminal eval so minimax always prefers
 # a won terminal over the best heuristic continuation.
 TERMINAL_SCALE: float = 1e4
+
+# v0.5-ratchase (ALBERT_WIN_PATTERN_APR18): walk-catch bonus coefficient.
+# Applied at the leaf as a perspective-symmetric additive term:
+#     F_RAT_CHASE_COEF * (belief[player_pos] - belief[opp_pos])
+# The coefficient is pinned to the raw walk-catch point value (+4 pt
+# per catch — same as a SEARCH hit) so a belief of 1.0 on our cell
+# contributes exactly +4 at the leaf. Perspective symmetry means under
+# negamax the contribution flips sign through the tree consistently.
+# Not a tunable feature — it's a pure exploit knob tied to game points.
+F_RAT_CHASE_COEF: float = 4.0
 
 # Carrie-style P(c) hyperparams (RESEARCH_HEURISTIC §B.2)
 _LAMBDA: float = 0.3   # second-best-direction flexibility bonus
@@ -1487,6 +1513,48 @@ def features(
     return out
 
 
+def _rat_chase_bonus(
+    board: board_mod.Board, belief_summary: BeliefSummary
+) -> float:
+    """v0.5-ratchase: F_RAT_CHASE walk-catch bonus, perspective-symmetric.
+
+    Returns `F_RAT_CHASE_COEF * (belief[player_pos] - belief[opp_pos])`
+    from the perspective of `board.player_worker` (negamax sign).
+
+    Why symmetric (both sides subtracted): at a non-root leaf in the
+    alpha-beta tree, `board.player_worker` is the side ABOUT TO MOVE
+    (after `reverse_perspective()`), so the side who just stepped is
+    `opponent_worker`. If we only added `+coef * belief[player_pos]`,
+    the negation through negamax would perversely PUNISH us for
+    stepping onto high-belief cells at odd plies. Subtracting
+    `belief[opp_pos]` cancels that asymmetry: from any ply, the
+    contribution is `+coef * belief[us]` for the side-to-move and
+    `-coef * belief[them]` for the side-just-moved, and the signs
+    flip consistently through the negamax recursion.
+
+    Guards:
+      - belief array missing / wrong length → returns 0.0 (safe)
+      - worker positions out of range → returns 0.0 (defensive)
+
+    Cost: O(1) — two flat-index lookups into the belief array.
+    """
+    b = belief_summary.belief
+    if b is None or len(b) != _BOARD_CELLS:
+        return 0.0
+    try:
+        wx, wy = board.player_worker.position
+        ox, oy = board.opponent_worker.position
+    except Exception:
+        return 0.0
+    if not (0 <= wx < BOARD_SIZE and 0 <= wy < BOARD_SIZE):
+        return 0.0
+    if not (0 <= ox < BOARD_SIZE and 0 <= oy < BOARD_SIZE):
+        return 0.0
+    widx = wy * BOARD_SIZE + wx
+    oidx = oy * BOARD_SIZE + ox
+    return F_RAT_CHASE_COEF * (float(b[widx]) - float(b[oidx]))
+
+
 def evaluate(
     board: board_mod.Board,
     belief_summary: BeliefSummary,
@@ -1500,10 +1568,16 @@ def evaluate(
             (player_points - opp_points) * TERMINAL_SCALE
         dominating any heuristic value from non-terminal leaves.
 
-    Non-terminal:
-        return float(dot(weights or W_INIT, features(board, belief_summary)))
+    Non-terminal (v0.5-ratchase):
+        return float(dot(weights or W_INIT, features(board, bs))
+                     + _rat_chase_bonus(board, bs))
 
-    Time budget: p99 <= 250 us over 10k random boards at 16 features
+    The F_RAT_CHASE additive term is outside the linear model because
+    its coefficient is pinned to the +4 walk-catch reward (not a BO
+    knob). See `_rat_chase_bonus` docstring for the perspective-
+    symmetric derivation.
+
+    Time budget: p99 <= 250 us over 10k random boards at 19 features
     (v0.4 bumped from 200 us in T-40b for F19/F20 tail; see tests).
     """
     if board.is_game_over():
@@ -1516,7 +1590,9 @@ def evaluate(
         raise ValueError(
             f"weights must be shape ({N_FEATURES},), got {w.shape}"
         )
-    return float(np.dot(w, features(board, belief_summary)))
+    linear = float(np.dot(w, features(board, belief_summary)))
+    bonus = _rat_chase_bonus(board, belief_summary)
+    return linear + bonus
 
 
 # ---------------------------------------------------------------------------

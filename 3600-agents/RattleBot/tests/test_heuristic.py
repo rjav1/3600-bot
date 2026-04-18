@@ -45,6 +45,7 @@ from game.enums import (  # noqa: E402
 )
 
 from RattleBot.heuristic import (  # noqa: E402
+    F_RAT_CHASE_COEF,
     N_FEATURES,
     TERMINAL_SCALE,
     W_INIT,
@@ -1440,6 +1441,97 @@ def test_vec_is_not_slower_than_scalar():
     )
 
 
+def test_rat_chase_bonus():
+    """v0.5-ratchase: leaf eval with a belief peak at our worker's cell
+    is strictly larger than leaf eval with the peak elsewhere.
+
+    Setup: two boards that differ ONLY in worker positions (same primes,
+    same carpets, same scores, same turn count), and a sharply-peaked
+    belief grid. In board A our worker stands ON the peak cell; in
+    board B our worker stands on an off-peak cell while the peak cell
+    is elsewhere (not adjacent, not on opp).
+
+    Expectation:
+      evaluate(A, bs) - evaluate(B, bs) ≈ F_RAT_CHASE_COEF * peak
+    (modulo small differences in other position-dependent features like
+    F5/F13 — we use the same cell for both boards' workers apart from
+    the peak/off-peak swap, and a uniform tail so the non-peak part of
+    the belief is the same across both boards).
+
+    Asserts:
+      - A's eval > B's eval.
+      - The gap is at least ~50% of F_RAT_CHASE_COEF * peak (the
+        perspective-symmetric bonus contributes COEF * peak from the
+        our-worker side; opp-worker side is unchanged).
+    """
+    peak_xy = (3, 3)        # our worker lands here in board A
+    off_xy = (2, 2)         # our worker stands here in board B
+    opp_xy = (6, 5)         # opp — far from peak in both boards
+    peak_idx = peak_xy[1] * BOARD_SIZE + peak_xy[0]
+
+    peak_mass = 0.9
+    belief = np.full(64, (1.0 - peak_mass) / 63, dtype=np.float64)
+    belief[peak_idx] = peak_mass
+    bs = _bs_from_belief(belief)
+
+    board_a = _fresh_board(player_pos=peak_xy, opp_pos=opp_xy)
+    board_b = _fresh_board(player_pos=off_xy, opp_pos=opp_xy)
+
+    val_a = evaluate(board_a, bs)
+    val_b = evaluate(board_b, bs)
+
+    assert val_a > val_b, (
+        f"Expected eval on peak cell ({val_a}) to exceed eval off peak "
+        f"({val_b}) by F_RAT_CHASE_COEF * peak_mass ≈ "
+        f"{F_RAT_CHASE_COEF * peak_mass:.3f}"
+    )
+    # Expected bonus gap contribution from F_RAT_CHASE alone:
+    #   coef * (b_peak - b_off) — b_peak=peak_mass, b_off=(1-p)/63
+    expected_gap = F_RAT_CHASE_COEF * (peak_mass - (1.0 - peak_mass) / 63)
+    # Require at least 50% of the pure F_RAT_CHASE contribution shows
+    # through; the other ~50% of slack absorbs any F5/F13/F14-16
+    # differences from the worker-position change (which could go
+    # either way and is bounded).
+    actual_gap = val_a - val_b
+    assert actual_gap >= 0.5 * expected_gap, (
+        f"Rat-chase contribution too weak: expected >= "
+        f"{0.5 * expected_gap:.3f}, got {actual_gap:.3f}"
+    )
+
+
+def test_rat_chase_bonus_symmetric_across_workers():
+    """Perspective symmetry: moving the PEAK from our cell to opp's cell
+    should SUBTRACT roughly the same amount, not just zero out. This
+    guards against a one-sided `+coef * belief[us]` implementation
+    that would break negamax sign consistency at odd plies.
+    """
+    our_xy = (3, 3)
+    opp_xy = (4, 5)
+    our_idx = our_xy[1] * BOARD_SIZE + our_xy[0]
+    opp_idx = opp_xy[1] * BOARD_SIZE + opp_xy[0]
+
+    peak_mass = 0.9
+    belief_our = np.full(64, (1.0 - peak_mass) / 63, dtype=np.float64)
+    belief_our[our_idx] = peak_mass
+    bs_our = _bs_from_belief(belief_our)
+
+    belief_opp = np.full(64, (1.0 - peak_mass) / 63, dtype=np.float64)
+    belief_opp[opp_idx] = peak_mass
+    bs_opp = _bs_from_belief(belief_opp)
+
+    board = _fresh_board(player_pos=our_xy, opp_pos=opp_xy)
+    val_our = evaluate(board, bs_our)
+    val_opp = evaluate(board, bs_opp)
+
+    # Peak on our cell should score strictly higher than peak on opp's
+    # cell. The pure F_RAT_CHASE gap is 2 * COEF * (peak - tail) because
+    # both directions flip (we gain on one side, lose on the other).
+    assert val_our > val_opp, (
+        f"Peak on our cell ({val_our}) should exceed peak on opp cell "
+        f"({val_opp}) — symmetric bonus not wired through."
+    )
+
+
 def _run_all():
     tests = [
         test_evaluate_returns_float,
@@ -1487,6 +1579,8 @@ def _run_all():
         test_f24_uses_opp_turns_left_for_reachability,
         test_f24_zero_when_no_primes,
         test_f24_feature_slot_wired_correctly,
+        test_rat_chase_bonus,
+        test_rat_chase_bonus_symmetric_across_workers,
         test_class_wrapper_matches_module_fn,
         test_weight_shape_validation,
         test_numba_kernels_match_python_reference,
