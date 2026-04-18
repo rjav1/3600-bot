@@ -1,7 +1,21 @@
-"""RattleBot v0.2 — end-to-end wiring.
+"""RattleBot v0.4-arch-fixes — end-to-end wiring.
 
 Entry-point `PlayerAgent` per CLAUDE.md §4 / BOT_STRATEGY.md v1.1 §3.1
-with v0.2 updates from BOT_STRATEGY_V02_ADDENDUM:
+with v0.2 updates from BOT_STRATEGY_V02_ADDENDUM and v0.4 arch-fix-ship
+patches (2026-04-17) from loss-forensics-dual's audit of
+`RattleBot_v03_pureonly_20260417_1022.zip`'s 26.3% bytefight WR:
+
+- F-1: k=1 carpet rolls are forbidden by move_gen (already shipped
+  via T-20f has_non_k1 gate — confirmed intact here).
+- F-2: SEARCH-gate mass floor raised from 1/3 (~0.333) to 0.35, with a
+  linear ramp down to 0.30 in the last 10 plies. Replaces v0.2's
+  SEARCH_GATE_MASS_FLOOR constant with _search_mass_threshold(board).
+- F-3: On ply 0 (turn_count == 0 / our first play() call), force a
+  PRIME move when legal instead of defaulting to the search's
+  unguided PLAIN. Priming on ply 0 banks +1 immediately and sets up
+  contiguous prime-lines.
+
+Pre-existing v0.2 knobs:
 - T-20a: per-turn ceiling lifted 3.0 s -> 6.0 s, configurable.
 - T-20b: `time_mgr` is the single owner of the 0.5 s safety reserve;
   `search.iterative_deepen(..., safety_s=0.0)` below.
@@ -78,15 +92,46 @@ def _load_tuned_weights() -> Optional[np.ndarray]:
     return None
 
 
-# T-20f bug 2: SEARCH-gate saturation guards (V01_LOSS_ANALYSIS). Without
-# these, a single match where `max_mass > 1/3` holds every turn drains
-# ~80 points to −2 misses. The entropy ceiling prevents the gate from
-# firing on a flat belief that just happens to have one slightly-hotter
-# cell, and the consecutive-miss cap prevents death spirals where the
-# belief stays concentrated around a cell we already proved empty.
+# T-20f bug 2 + v0.4 F-2: SEARCH-gate saturation guards.
+#
+# v0.2 had mass_floor = 1/3 (~0.333) which is the raw +4/-2 break-even.
+# v0.4 arch-fix-ship F-2 (loss-forensics-dual LOSS_ANALYSIS_CARRIE_APR18 +
+# LOSS_ANALYSIS_MICHAEL_APR18): raise the hard floor to 0.35 so we stop
+# firing speculative SEARCHes on noisily-peaked beliefs, with a linear
+# ramp down to 0.30 in the last 10 plies where the opportunity cost of
+# NOT searching is higher (fewer remaining ways to convert information
+# into points). The ramp is linear in `turns_left` over [0, 10]:
+#     turns_left >= 10 -> 0.35
+#     turns_left == 5  -> 0.325
+#     turns_left == 0  -> 0.30
+# Entropy ceiling + consec-miss cap are unchanged from T-20f.
 SEARCH_GATE_MAX_CONSEC_MISSES: int = 2
 SEARCH_GATE_ENTROPY_CEIL: float = 0.75 * math.log(64.0)  # ~3.122 nats
-SEARCH_GATE_MASS_FLOOR: float = 1.0 / 3.0
+SEARCH_GATE_MASS_FLOOR_HIGH: float = 0.35   # v0.4 F-2 baseline
+SEARCH_GATE_MASS_FLOOR_LOW: float = 0.30    # v0.4 F-2 endgame floor
+SEARCH_GATE_RAMP_TURNS: int = 10            # v0.4 F-2 ramp window
+# Kept for backwards-compatibility imports by tests; now unused in-code.
+SEARCH_GATE_MASS_FLOOR: float = SEARCH_GATE_MASS_FLOOR_HIGH
+
+
+def _search_mass_threshold(turns_left: int) -> float:
+    """v0.4 F-2: return the adaptive SEARCH-gate mass threshold.
+
+    >>> _search_mass_threshold(40)
+    0.35
+    >>> _search_mass_threshold(10)
+    0.35
+    >>> abs(_search_mass_threshold(5) - 0.325) < 1e-9
+    True
+    >>> _search_mass_threshold(0)
+    0.3
+    """
+    tl = max(0, int(turns_left))
+    if tl >= SEARCH_GATE_RAMP_TURNS:
+        return SEARCH_GATE_MASS_FLOOR_HIGH
+    # Linear ramp from 0.30 at tl=0 to 0.35 at tl=10.
+    span = SEARCH_GATE_MASS_FLOOR_HIGH - SEARCH_GATE_MASS_FLOOR_LOW
+    return SEARCH_GATE_MASS_FLOOR_LOW + span * (tl / float(SEARCH_GATE_RAMP_TURNS))
 
 
 __all__ = ["PlayerAgent"]
@@ -154,7 +199,7 @@ class PlayerAgent:
             else float("nan")
         )
         return (
-            "RattleBot v0.2 — alpha-beta + ID + HMM belief "
+            "RattleBot v0.4-arch-fixes — alpha-beta + ID + HMM belief "
             f"(ceiling={ceiling:.1f}s)"
         )
 
@@ -201,13 +246,35 @@ class PlayerAgent:
             board, time_left, belief_summary,
             prev_eval_variance=prev_var,
         )
-        # T-20f: three-condition SEARCH gate. All must hold.
-        #   (a) max_mass > 1/3  — unconditional +4/-2 break-even
+
+        # v0.4 F-3 (arch-fix-ship): force a PRIME opening on ply 0. The
+        # shipped v0.3 bot often started with a PLAIN because the leaf
+        # heuristic at d=1-2 hasn't yet learned that priming now gets us
+        # both +1 and a starting endpoint for a future carpet roll. This
+        # short-circuits the search on turn 0 only; it returns the first
+        # legal PRIME move in any cardinal direction, falling back to
+        # the regular search path if somehow no PRIME is legal (e.g.
+        # all 4 primes blocked — essentially impossible at spawn).
+        if self._is_ply_zero(board):
+            opening = self._ply_zero_prime(board)
+            if opening is not None:
+                self._last_own_move_was_search = False
+                # No TT probe needed; skip root-value history update.
+                self._time_mgr.end_turn(0.0)
+                return opening
+
+        # v0.4 F-2: three-condition SEARCH gate with adaptive mass floor.
+        #   (a) max_mass > threshold(turns_left) — 0.35 baseline, ramps
+        #       down to 0.30 in the last 10 plies (F-2 spec).
         #   (b) entropy  < 0.75 * ln(64) ~= 3.12 nats — belief is peaked
         #   (c) consec misses <= 2 — don't death-spiral on a stale peak
         # T-20b: time_mgr owns the 0.5 s reserve; pass safety_s=0.0.
+        turns_left_now = int(
+            getattr(board.player_worker, "turns_left", 40) or 40
+        )
+        mass_threshold = _search_mass_threshold(turns_left_now)
         search_gated = (
-            belief_summary.max_mass > SEARCH_GATE_MASS_FLOOR
+            belief_summary.max_mass > mass_threshold
             and belief_summary.entropy < SEARCH_GATE_ENTROPY_CEIL
             and self._consec_search_misses <= SEARCH_GATE_MAX_CONSEC_MISSES
         )
@@ -248,6 +315,71 @@ class PlayerAgent:
             pass
         self._time_mgr.end_turn(0.0)
         return move
+
+    def _is_ply_zero(self, board: board_mod.Board) -> bool:
+        """v0.4 F-3: are we on our first play() call of the game?
+
+        Robust to both perspectives. The engine gives us the board
+        from our point of view, so `player_worker.turns_left == 40`
+        is the canonical marker of "no moves made yet by us". We
+        also consult `board.turn_count` as a sanity check — on ply 0
+        it's 0 for player A and 1 for player B.
+        """
+        try:
+            tl = int(getattr(board.player_worker, "turns_left", 0) or 0)
+        except Exception:
+            tl = 0
+        # turns_left decrements after each of our moves, so 40 <=> we
+        # haven't moved yet.
+        return tl >= 40
+
+    def _ply_zero_prime(self, board: board_mod.Board) -> Optional[Move]:
+        """v0.4 F-3: return the best legal PRIME move on ply 0, or None.
+
+        Strategy: pick the PRIME whose destination offers the most
+        cardinal-adjacent SPACE cells (maximizing future line-building
+        options). Ties broken by the raw iteration order from
+        `board.get_valid_moves()` for determinism. Never returns a
+        non-PRIME move — callers fall through to the normal search.
+        """
+        try:
+            legal = board.get_valid_moves(exclude_search=True)
+        except Exception:
+            return None
+        primes = [m for m in legal if int(m.move_type) == int(MoveType.PRIME)]
+        if not primes:
+            return None
+        if len(primes) == 1:
+            return primes[0]
+
+        # Score each prime by the number of non-blocked, non-primed,
+        # non-carpeted neighbors at the landing square — a cheap proxy
+        # for "how many directions can this prime extend into next".
+        def _landing_score(mv: Move) -> int:
+            try:
+                child = board.forecast_move(mv, check_ok=False)
+                if child is None:
+                    return -1
+                land = child.player_worker.position
+                lx, ly = int(land[0]), int(land[1])
+                score = 0
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = lx + dx, ly + dy
+                    if 0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE:
+                        if not board.is_cell_blocked((nx, ny)):
+                            score += 1
+                return score
+            except Exception:
+                return 0
+
+        best = primes[0]
+        best_score = _landing_score(best)
+        for mv in primes[1:]:
+            s = _landing_score(mv)
+            if s > best_score:
+                best_score = s
+                best = mv
+        return best
 
     def _prev_eval_variance(self) -> Optional[float]:
         """T-40c: sample variance of recent root-value estimates.

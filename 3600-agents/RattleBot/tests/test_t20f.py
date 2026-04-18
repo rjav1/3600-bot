@@ -134,7 +134,7 @@ def test_search_gate_entropy_guard():
         f"test precondition broken: ent={ent}"
     )
 
-    gate = (
+    gate = bool(
         flat[0] > SEARCH_GATE_MASS_FLOOR
         and ent < SEARCH_GATE_ENTROPY_CEIL
         and 0 <= SEARCH_GATE_MAX_CONSEC_MISSES
