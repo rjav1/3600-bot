@@ -1155,3 +1155,11 @@ Below 55% bar → upload DONE (for record) but set-current NOT executed. Team-le
 - [2026-04-18 12:36:40Z] SUBMITTED match=`d3b3812e` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (scrim-v09-more wave 3 vs Albert)
 - [2026-04-18 12:39:40Z] SUBMITTED match=`b878f901` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-more wave 3 vs Carrie — 1x 429 retry)
 - [2026-04-18 12:39:40Z] SUBMITTED match=`8105930b` vs `Carrie` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage result=queued (scrim-v09-more wave 3 vs Carrie — 1x 429 retry)
+- [2026-04-18 12:37:49Z] RUNNING  match=`8105930b` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T12:37 finished=
+- [2026-04-18 12:37:49Z] RUNNING  match=`b878f901` vs `Carrie` (6d2a15ad) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Carrie.zip` reason=scrimmage sched=2026-04-18T12:37 finished=
+
+- [2026-04-18 12:38:20Z] SUBMITTED match=`4082ca8b` vs `Albert` sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage result=queued (cron-warm-queue 2026-04-18T12:05Z)- [2026-04-18 12:38:20Z] RUNNING  match=`4082ca8b` vs `Albert` (5121a2d4) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`Albert.zip` reason=scrimmage sched=2026-04-18T12:38 finished=
+- [2026-04-18 12:38:50Z] RUNNING  match=`e3c6ec2d` vs `George` (13f7ba71) sub=`RattleBot_v09_f3narrow_20260418_061938.zip` opp_sub=`George.zip` reason=scrimmage sched=2026-04-18T12:38 finished=
+
+- [2026-04-18 12:39:09Z] ROLLBACK — v09 (f113fb68) 10W/62 = 16.1% at N≥60 threshold. Set Current back to v04 (379d5f82). F-series direction exhausted.
+- [2026-04-18 12:39:09Z] SUBMITTED match=`e3c6ec2d` vs `George` sub=`RattleBot_v04_archfix_20260418_003411.zip` opp_sub=`George.zip` reason=scrimmage result=queued (cron-warm-queue 2026-04-18T12:38Z — v04 again)

@@ -159,3 +159,40 @@
 - v06 went 0W/22 with 3.9 expected wins at v04 rates (p<0.02). Falsified F-2 revert theory.
 - Set Current back to v04 (379d5f82).
 - Dispatching v06-loss-diagnostic to understand failure mode.
+
+### 2026-04-18T11:03Z — cron sweep
+- v09 Current (f113fb68). Stats: 7W/38 = 18.4% (40 running). C 2/14, A 0/14, G 5/10. Noise-compatible vs v04 21.3%.
+- V06_FAILURE_DIAGNOSIS (064cf87): F-3 extension was the 0/22 killer. v09 reverted to ply-0 only.
+- BATTLE_ROYALE_N10 (18084ba): greedy_opp 20% vs main — do not promote v07.
+- Monitor armed for rollout-v2-search summary.
+
+### 2026-04-18T11:11Z — cron sweep
+- v09: 7W/41 = 17.1% (C 2/16, A 0/15, G 5/10). Below v04 21.3% directionally but CI overlap.
+- Albert 0/15: p(0|v04rate)=0.42 — still noise-compatible. Waiting on 40 in-flight → N~80 for decisive signal.
+- Warm George scrim: 3239d347.
+
+### 2026-04-18T11:31Z — cron sweep
+- v09: 7W/42 = 16.7%, 42 running. C 2/16, A 0/15, G 5/11. Trend flat.
+- Warm Albert scrim: eccc66ff.
+
+### 2026-04-18T11:34Z — wakeup check
+- v09 aggregate: 7W/42 = 16.67% (N<60 threshold → patience, not rollback).
+- Albert 0/15, Carrie 2/16, George 5/11.
+- rollout_v2_search_n3 run dead (0 matches after 5h+). Agent likely timed out. Not critical.
+- 42 in-flight results trickling. Decision at N≥60.
+
+### 2026-04-18T11:51Z — cron sweep
+- v09: 7/44 = 15.9% (C 2/16, A 0/17, G 5/11). Still N<60, hold per rule.
+- Albert 0/17: Wilson upper = 18.4%. Approaches significance vs v04 5.9% but not there yet.
+- Warm scrim: 3cb9c011 vs Carrie.
+
+### 2026-04-18T12:05Z — v09 rollback-watch
+- v09: 7W/46 = 15.2%. Trend: 18.4→16.7→15.9→15.2% (monotonic ↓). Albert 0/17.
+- Hold per N<60 rule; firing 18 more via scrim-v09-more.
+- If v09 ≤18% at N≥60, rollback planned.
+
+### 2026-04-18T12:38Z — ROLLBACK v09 → v04
+- v09: 10W/62 = 16.1% at N≥60 threshold. Carrie 3/23 (13%), Albert 1/24 (4.2%), George 5/11 (45.5%). All directionally worse than v04.
+- Set Current back to v04 (379d5f82).
+- F-series direction (F-2 revert, F_RAT_CHASE) exhausted — v09 could not improve on v04.
+- v04 becomes our frozen grade submission. Focus: keep firing scrims on v04 for more confident grade signal.
