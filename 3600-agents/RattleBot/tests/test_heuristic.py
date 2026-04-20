@@ -8,6 +8,7 @@ Covers:
     * per-call timing p99 <= 100 µs over 10k random boards
     * high max-mass belief produces a much more negative contribution
       than low max-mass belief (F11 signal direction check)
+    * v0.6 F25/F26 immediate carpet + F5/F7 urgency scaling
 
 Run directly:
     python3 3600-agents/RattleBot/tests/test_heuristic.py
@@ -52,6 +53,7 @@ from RattleBot.heuristic import (  # noqa: E402
     Heuristic,
     evaluate,
     features,
+    _rat_chase_bonus,
 )
 from RattleBot.types import BeliefSummary  # noqa: E402
 
@@ -216,6 +218,9 @@ def test_zero_features_on_empty_board():
     assert abs(feats[6] - math.log(64)) < 1e-6
 
     val = evaluate(board, bs)
+    assert feats[19] == 0.0 and feats[20] == 0.0, (
+        "F25/F26 must be 0 with no primed lines"
+    )
     # Sanity: F1/F3/F4 = 0 so eval is dominated by F5+F7+F11+F12+F13
     # and the three multi-scale kernels (F14/F15/F16). The kernels
     # aggregate over all 64 cells so they can contribute tens of
@@ -320,6 +325,11 @@ def test_symmetry():
     assert feats_rev[18] >= 0.0
     assert feats_fwd[18] <= 64.0
     assert feats_rev[18] <= 64.0
+    # F25/F26 immediate carpet points — swap across perspective like F5/F7.
+    assert abs(feats_fwd[19] - feats_rev[20]) < 1e-9
+    assert abs(feats_fwd[20] - feats_rev[19]) < 1e-9
+    assert 0.0 <= feats_fwd[19] <= 21.0
+    assert 0.0 <= feats_fwd[20] <= 21.0
 
 
 def test_per_call_timing():
@@ -407,6 +417,9 @@ def test_high_max_belief_triggers_search_signal():
     # F18 falls back to belief.entropy — exact same delta as F12 but
     # weighted by W_INIT[13].
     delta_f18 = W_INIT[13] * (bs_high.entropy - bs_low.entropy)
+    delta_f_rat_chase = (
+        _rat_chase_bonus(board, bs_high) - _rat_chase_bonus(board, bs_low)
+    )
     # F19 delta: Σ belief[c] · I(d(worker,c)≤2) — depends on where the
     # peak lands vs worker, so compute from the actual masks.
     from RattleBot.heuristic import _NEAR2_MASK
@@ -415,7 +428,10 @@ def test_high_max_belief_triggers_search_signal():
     f19_high = float(np.dot(bs_high.belief, _NEAR2_MASK[worker_idx]))
     delta_f19 = W_INIT[14] * (f19_high - f19_low)
     # F20 doesn't depend on belief — cancels in the delta.
-    analytical = -(delta_f11 + delta_f12 + delta_f13 + delta_f18 + delta_f19)
+    analytical = -(
+        delta_f11 + delta_f12 + delta_f13 + delta_f18 + delta_f19
+        + delta_f_rat_chase
+    )
     assert abs(observed_drop - analytical) < 1e-6, (
         f"eval delta {observed_drop} diverged from analytical "
         f"{analytical} — are F5/F7/F8/F20 varying unexpectedly?"
@@ -1081,6 +1097,53 @@ def test_f24_feature_slot_wired_correctly():
     assert feats[18] == 1.0
 
 
+def test_f25_f26_immediate_carpet_engine_semantics():
+    """F25/F26: primed-only contiguous carpet value; k=3 → 4 pts."""
+    from RattleBot.heuristic import _best_immediate_carpet_points
+    board = _fresh_board(
+        player_pos=(3, 3), opp_pos=(0, 0), blockers=False
+    )
+    for loc in [(4, 3), (5, 3), (6, 3)]:
+        board.set_cell(loc, Cell.PRIMED)
+    bs = _uniform_belief_summary()
+    feats = features(board, bs)
+    assert _best_immediate_carpet_points(board, 3, 3) == 4.0
+    assert feats[19] == 4.0
+    # Opponent at (0,0) has no primed neighbors in this layout.
+    assert feats[20] == 0.0
+
+
+def test_f25_worker_on_prime_breaks_ray():
+    """Primed cell occupied by a worker is not carpetable — ray stops."""
+    from RattleBot.heuristic import _best_immediate_carpet_points
+    board = _fresh_board(
+        player_pos=(3, 3), opp_pos=(5, 3), blockers=False
+    )
+    board.set_cell((4, 3), Cell.PRIMED)
+    board.set_cell((5, 3), Cell.PRIMED)  # under opp — breaks east from us
+    assert _best_immediate_carpet_points(board, 3, 3) == 0.0
+
+
+def test_f5_urgency_scales_cell_potential():
+    """F5 multiplies raw Carrie potential by sqrt(our_turns_left / 40)."""
+    from RattleBot.heuristic import _cell_potential_for_worker
+    board = _fresh_board(
+        player_pos=(3, 3), opp_pos=(0, 0), blockers=False
+    )
+    board.set_cell((4, 3), Cell.PRIMED)
+    board.set_cell((5, 3), Cell.PRIMED)
+    bs = _uniform_belief_summary()
+    wx, wy = 3, 3
+    ox, oy = 0, 0
+    raw = _cell_potential_for_worker(board, wx, wy, ox, oy)
+    board.player_worker.turns_left = 40
+    f5_40 = features(board, bs)[3]
+    board.player_worker.turns_left = 10
+    f5_10 = features(board, bs)[3]
+    assert abs(f5_40 - raw) < 1e-6
+    assert abs(f5_10 - raw * np.sqrt(10.0 / 40.0)) < 1e-6
+
+
 def test_class_wrapper_matches_module_fn():
     board = _fresh_board()
     bs = _uniform_belief_summary()
@@ -1570,15 +1633,19 @@ def _run_all():
         test_f22_counts_each_line_once,
         test_f22_zero_when_no_primes,
         test_f22_feature_slot_wired_correctly,
-        test_f10_counts_primed_carpet_adjacent_to_opp,
         test_f10_rewards_our_adjacency_to_primed_endpoint,
-        test_f10_counts_both_endpoints_when_adjacent,
+        test_f10_vertical_line_adjacency,
+        test_f10_counts_both_endpoints_when_adjacent_to_both,
         test_f10_ignores_k1_lines,
+        test_f10_zero_when_no_primes,
         test_f10_feature_slot_wired_correctly,
         test_f24_mirrors_f17_on_opp_side,
         test_f24_uses_opp_turns_left_for_reachability,
         test_f24_zero_when_no_primes,
         test_f24_feature_slot_wired_correctly,
+        test_f25_f26_immediate_carpet_engine_semantics,
+        test_f25_worker_on_prime_breaks_ray,
+        test_f5_urgency_scales_cell_potential,
         test_rat_chase_bonus,
         test_rat_chase_bonus_symmetric_across_workers,
         test_class_wrapper_matches_module_fn,

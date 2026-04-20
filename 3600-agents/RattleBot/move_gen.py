@@ -70,6 +70,29 @@ def _sort_key(move: Move, history: Optional[Dict[MoveKey, int]]):
     return (type_bucket, -hist, -immediate_delta(move))
 
 
+def _extends_chain(board, move: Move) -> bool:
+    """Check if this PRIME move extends an existing prime chain."""
+    if int(move.move_type) != _MT_PRIME:
+        return False
+    
+    # Handle stub boards for testing
+    if not hasattr(board, 'player_worker') or not hasattr(board, 'get_cell'):
+        return False
+    
+    # Forecast the move to see the landing position
+    child = board.forecast_move(move, check_ok=False)
+    if child is None:
+        return False
+    lx, ly = child.player_worker.position
+    # Check if any cardinal neighbor is primed
+    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        nx, ny = lx + dx, ly + dy
+        if 0 <= nx < 8 and 0 <= ny < 8:
+            if board.get_cell((nx, ny)) == 2:  # PRIMED
+                return True
+    return False
+
+
 def _is_k1_carpet(m: Move) -> bool:
     return int(m.move_type) == _MT_CARPET and m.roll_length < 2
 
@@ -106,6 +129,9 @@ def ordered_moves(
         elif mt == _MT_PRIME:
             type_bucket = 1
             delta = 1
+            # Boost PRIME moves that extend chains
+            if _extends_chain(board, m):
+                type_bucket = 0  # Same as good CARPET
         elif mt == _MT_PLAIN:
             type_bucket = 2
             delta = 0

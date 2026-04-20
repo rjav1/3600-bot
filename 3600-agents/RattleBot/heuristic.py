@@ -3,7 +3,7 @@
 # Worker subprocesses re-import from disk each trial; mid-run edits
 # contaminate BO score averages. Kill BO first
 # (taskkill //PID $(cat bo_pid.txt) //T //F), then edit, then relaunch.
-"""F2 linear leaf evaluator — v0.5-ratchase (19 features + F_RAT_CHASE bonus).
+"""F2 linear leaf evaluator — v0.6-immediate (21 features + F_RAT_CHASE bonus).
 
 9-feature linear heuristic per BOT_STRATEGY_V02_ADDENDUM.md §2.4 / T-20c
 expanded by 3 distance-kernel features (T-20c.1) per
@@ -23,6 +23,15 @@ bonus (count of PRIMED/CARPET cardinal neighbors of opp worker PLUS
 primed-line endpoints cardinal-adjacent to our worker) and **F24**
 opp_wasted_primes (mirror of F17 against opp's reachable primes —
 rewards maneuvering opp into wasteful priming).
+v0.6-immediate (2026-04-19): **F5/F7 urgency** — multiply Carrie cell
+potential by `sqrt(turns_left / 40)` for the respective worker so
+late-game search stops overvaluing k=7 corridors that cannot be
+primed in time. **F25/F26 immediate carpet** — max
+`CARPET_POINTS_TABLE[k]` (k ≥ 2) along any cardinal from each worker
+over **primed-only** runs with worker blocking per `board.py`
+carpet rules; captures nonlinear payoff (k=6 vs k=5) that F8's raw
+length omits.
+
 v0.5-ratchase (ALBERT_WIN_PATTERN_APR18): adds a **F_RAT_CHASE**
 walk-catch bonus applied at the leaf eval — a perspective-symmetric
 reward of `F_RAT_CHASE_COEF * (belief[player_pos] - belief[opp_pos])`.
@@ -61,8 +70,11 @@ Features (all float64, sign-carried by W_INIT):
   F4  ours_carpet_count         = popcount(_carpet_mask)
                                   (same attribution caveat as F3)
   F5  longest_primable_line_ours  = Carrie-style cell potential at our
-                                    worker per RESEARCH_HEURISTIC §B.2
+                                    worker (§B.2) × sqrt(our_turns_left/40)
+                                    — urgency so long corridors are not
+                                    overweighted late.
   F7  longest_primable_line_theirs= mirror of F5 from opponent perspective
+                                    × sqrt(opp_turns_left/40)
   F11 belief_max                = BeliefSummary.max_mass
   F12 belief_entropy            = BeliefSummary.entropy
   F8  opp_longest_primable      = max_d reach(opp_pos, d) through primed
@@ -148,6 +160,25 @@ Features (all float64, sign-carried by W_INIT):
                                   OPPONENT_EXPLOITS §T-40-EXPLOIT-3.
                                   Positive weight — their dead primes
                                   are good for us. Integer in [0, 64].
+  F25 immediate_carpet_us       = max over cardinals of
+                                  CARPET_POINTS_TABLE[k] for legal
+                                  carpet length k≥2 from our worker
+                                  (primed-only chain; workers block).
+                                  In [0, 21].
+  F26 immediate_carpet_opp      = same from opponent worker. In [0, 21].
+  F27 prime_connectivity        = total length of all prime chains
+                                  (sum of k for each connected component
+                                  of primes). Rewards building longer
+                                  connected structures.
+  F28 centrality                = -Manhattan(worker, center) — rewards
+                                  central positions for flexibility.
+  F29 opp_reach_to_primes       = count of our primed cells within
+                                  Manhattan ≤ opp_turns_left of opp
+                                  worker. Penalizes exposing primes to
+                                  opponent.
+  F30 straight_chain_bonus      = bonus for collinear prime runs
+                                  (horizontal/vertical) vs scattered
+                                  clusters.
 
   P(c) = best-roll-value-if-worker-stood-at-c (ray scan through
          BLOCKED/CARPET/opp-worker blockers, Manhattan-extended using
@@ -156,7 +187,7 @@ Features (all float64, sign-carried by W_INIT):
 Public API (module-level):
 
     evaluate(board, belief_summary, weights=None) -> float
-    features(board, belief_summary) -> np.ndarray   # shape (19,) float64
+    features(board, belief_summary) -> np.ndarray   # shape (25,) float64
 
 A thin Heuristic class is kept for downstream consumers (search engine).
 
@@ -169,6 +200,7 @@ Owner: dev-heuristic.
 from __future__ import annotations
 
 import functools
+import math
 import os
 from typing import Optional
 
@@ -241,7 +273,7 @@ def is_numba_active() -> bool:
     return bool(_USE_NUMBA and _NUMBA_AVAILABLE)
 
 
-N_FEATURES: int = 19
+N_FEATURES: int = 27
 
 # Terminal eval = (player_points - opp_points) * TERMINAL_SCALE.
 # Chosen >> any realistic non-terminal eval so minimax always prefers
@@ -366,10 +398,16 @@ GAMMA_RESET: float = 0.3
 #                      penalty, so the signal tells us to maneuver them
 #                      into over-priming. Positive — their dead primes
 #                      are good for us.
+#  19   F25    +0.85   Best immediate carpet payoff from our worker (0..21).
+#                      High-leverage material signal; complements F5
+#                      which counts SPACE-filled setup corridors.
+#  20   F26    -0.75   Opp's best immediate carpet (same semantics). Neg —
+#                      their k=6/k=7 cash is dangerous.
 #
 W_INIT: np.ndarray = np.array(
     [1.0, 0.3, 0.2, 1.5, -1.2, -3.0, -0.5, -0.6, -0.05, 0.15, 0.10, 0.10,
-     -0.4, 0.1, 0.3, -0.6, 0.3, 0.15, 0.15],
+     -0.4, 0.1, 0.3, -0.6, 0.3, 0.15, 0.15, 0.85, -0.75, 0.5, -0.1, -0.2,
+     0.5, 0.15],
     dtype=np.float64,
 )
 assert W_INIT.shape == (N_FEATURES,)
@@ -1249,6 +1287,40 @@ def _primed_endpoint_adjacency(board: board_mod.Board) -> int:
     return adjacency
 
 
+def _best_immediate_carpet_points(board: board_mod.Board, wx: int, wy: int) -> float:
+    """Maximum `CARPET_POINTS_TABLE[k]` over four cardinals for k ≥ 2.
+
+    Semantics mirror `Board.get_valid_moves` carpet generation: the
+    worker at ``(wx, wy)`` may roll over *contiguous* **PRIMED** cells
+    starting one step away; workers occupying a primed square make that
+    square uncarpetable and terminate the ray (same as engine bit test).
+
+    Returns a float in ``[0.0, 21.0]`` (k<2 directions contribute 0).
+    """
+    px, py = board.player_worker.position
+    ox, oy = board.opponent_worker.position
+    best = 0.0
+    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+        k = 0
+        nx, ny = wx + dx, wy + dy
+        while 0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE:
+            bit = 1 << (ny * BOARD_SIZE + nx)
+            if not (board._primed_mask & bit):
+                break
+            if (nx, ny) == (px, py) or (nx, ny) == (ox, oy):
+                break
+            k += 1
+            if k >= 7:
+                break
+            nx += dx
+            ny += dy
+        if k >= 2:
+            v = float(_CARPET_VALUE[k])
+            if v > best:
+                best = v
+    return best
+
+
 def _opp_wasted_primes(board: board_mod.Board) -> int:
     """F24 helper (T-40-EXPLOIT-3): mirror of F17 applied to OPP's
     reachable primes. Count primed cells that are (a) reachable by opp's
@@ -1428,10 +1500,157 @@ def _opp_belief_entropy(
     return float(entropy_new)
 
 
+def _prime_connectivity(board: board_mod.Board) -> int:
+    """F27 helper: total length of all prime chains.
+
+    Sum the lengths of all connected components of primed cells.
+    Rewards building longer connected structures.
+    """
+    primed = board._primed_mask
+    visited = 0
+    total_length = 0
+    for idx in range(_BOARD_CELLS):
+        bit = 1 << idx
+        if not (primed & bit) or (visited & bit):
+            continue
+        # BFS to find component size
+        component_size = 0
+        queue = [idx]
+        while queue:
+            curr = queue.pop(0)
+            if visited & (1 << curr):
+                continue
+            visited |= (1 << curr)
+            component_size += 1
+            # Add neighbors
+            x, y = curr % BOARD_SIZE, curr // BOARD_SIZE
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE:
+                    nidx = ny * BOARD_SIZE + nx
+                    nbit = 1 << nidx
+                    if (primed & nbit) and not (visited & nbit):
+                        queue.append(nidx)
+        total_length += component_size
+    return total_length
+
+
+def _centrality(wx: int, wy: int) -> float:
+    """F28 helper: Manhattan distance from worker to board center."""
+    center_x, center_y = BOARD_SIZE // 2, BOARD_SIZE // 2
+    return abs(wx - center_x) + abs(wy - center_y)
+
+
+def _opp_reach_to_primes(board: board_mod.Board) -> int:
+    """F29 helper: count of our primed cells within opp's reach."""
+    primed = board._primed_mask
+    ox, oy = board.opponent_worker.position
+    opp_turns_left = int(board.opponent_worker.turns_left)
+    count = 0
+    for idx in range(_BOARD_CELLS):
+        bit = 1 << idx
+        if not (primed & bit):
+            continue
+        px = idx % BOARD_SIZE
+        py = idx // BOARD_SIZE
+        if abs(px - ox) + abs(py - oy) <= opp_turns_left:
+            count += 1
+    return count
+
+
+def _straight_chain_bonus(board: board_mod.Board) -> float:
+    """F30 helper: bonus for collinear prime runs.
+
+    Sum lengths of horizontal and vertical prime runs, minus a penalty
+    for scattered clusters.
+    """
+    primed = board._primed_mask
+    bonus = 0.0
+    # Horizontal runs
+    for y in range(BOARD_SIZE):
+        run = 0
+        for x in range(BOARD_SIZE):
+            idx = y * BOARD_SIZE + x
+            if primed & (1 << idx):
+                run += 1
+            else:
+                if run >= 2:
+                    bonus += run
+                run = 0
+        if run >= 2:
+            bonus += run
+    # Vertical runs
+    for x in range(BOARD_SIZE):
+        run = 0
+        for y in range(BOARD_SIZE):
+            idx = y * BOARD_SIZE + x
+            if primed & (1 << idx):
+                run += 1
+            else:
+                if run >= 2:
+                    bonus += run
+                run = 0
+        if run >= 2:
+            bonus += run
+    # Penalty for total primes not in runs (scattered)
+    total_primes = _popcount(primed)
+    scattered = total_primes - bonus  # approximate
+    return bonus - 0.5 * scattered
+
+
+def _search_ev_estimate(belief_summary: BeliefSummary) -> float:
+    """Approximate root SEARCH EV from the current belief state."""
+    b = belief_summary.belief
+    if b is None or len(b) != _BOARD_CELLS:
+        return 0.0
+    p = float(belief_summary.max_mass or 0.0)
+    if p <= 0.0:
+        return 0.0
+    H_before = float(belief_summary.entropy)
+    s = 1.0 - p
+    if s <= 1e-12:
+        H_miss = 0.0
+    else:
+        H_miss = 0.0
+        argmax = int(belief_summary.argmax)
+        for i in range(_BOARD_CELLS):
+            if i == argmax:
+                continue
+            v = float(b[i])
+            if v <= 0.0:
+                continue
+            q = v / s
+            H_miss -= q * math.log(q + 1e-18)
+    dH = max(0.0, H_before - (s * H_miss))
+    H_p0 = math.log(float(_BOARD_CELLS))
+    return 6.0 * p - 2.0 + GAMMA_INFO * dH - GAMMA_RESET * p * H_p0
+
+
+def _belief_peak_proximity(
+    board: board_mod.Board, belief_summary: BeliefSummary
+) -> float:
+    """Reward being closer to the highest-belief rat cell than the opponent."""
+    try:
+        wx, wy = board.player_worker.position
+        ox, oy = board.opponent_worker.position
+    except Exception:
+        return 0.0
+    if not (0 <= wx < BOARD_SIZE and 0 <= wy < BOARD_SIZE):
+        return 0.0
+    if not (0 <= ox < BOARD_SIZE and 0 <= oy < BOARD_SIZE):
+        return 0.0
+    peak = int(belief_summary.argmax)
+    px = peak % BOARD_SIZE
+    py = peak // BOARD_SIZE
+    our_dist = abs(wx - px) + abs(wy - py)
+    opp_dist = abs(ox - px) + abs(oy - py)
+    return float(opp_dist - our_dist)
+
+
 def features(
     board: board_mod.Board, belief_summary: BeliefSummary
 ) -> np.ndarray:
-    """Compute the 19-feature vector (float64) from the perspective of
+    """Compute the 21-feature vector (float64) from the perspective of
     `board.player_worker`. Fast path for leaf eval.
 
     No allocation beyond the returned array; all sub-calculations reuse
@@ -1450,11 +1669,15 @@ def features(
     # F4 ours_carpet_count — popcount of carpet mask (attribution approx)
     out[2] = float(_popcount(board._carpet_mask))
 
-    # F5 / F7 — Carrie cell potential from each worker's position
+    # F5 / F7 — Carrie cell potential × per-worker urgency (v0.6)
     wx, wy = board.player_worker.position
     ox, oy = board.opponent_worker.position
-    out[3] = _cell_potential_for_worker(board, wx, wy, ox, oy)
-    out[4] = _cell_potential_for_worker(board, ox, oy, wx, wy)
+    tl_p = max(1, int(board.player_worker.turns_left))
+    tl_o = max(1, int(board.opponent_worker.turns_left))
+    urg_p = float(np.sqrt(tl_p / 40.0))
+    urg_o = float(np.sqrt(tl_o / 40.0))
+    out[3] = _cell_potential_for_worker(board, wx, wy, ox, oy) * urg_p
+    out[4] = _cell_potential_for_worker(board, ox, oy, wx, wy) * urg_o
 
     # F11 / F12 — belief summary stats (O(1))
     out[5] = float(belief_summary.max_mass)
@@ -1510,6 +1733,31 @@ def features(
     # primes (T-40-EXPLOIT-3). Integer count, typically in [0, 3].
     out[18] = float(_opp_wasted_primes(board))
 
+    # F25 / F26 — engine-faithful best one-shot carpet from each worker.
+    out[19] = _best_immediate_carpet_points(board, wx, wy)
+    out[20] = _best_immediate_carpet_points(board, ox, oy)
+
+    # F27 — prime connectivity: total length of all prime chains.
+    out[21] = float(_prime_connectivity(board))
+
+    # F28 — centrality: -Manhattan(worker, center).
+    out[22] = -_centrality(wx, wy)
+
+    # F29 — opp reach to primes: count of our primed cells within opp's reach.
+    out[23] = float(_opp_reach_to_primes(board))
+
+    # F30 — straight chain bonus: bonus for collinear prime runs.
+    out[24] = float(_straight_chain_bonus(board))
+
+    # F31 — search EV estimate: reward states where root SEARCH is likely
+    # to be a strong +EV decision. A direct signal for Albert-level rat
+    # exploitation.
+    out[25] = float(_search_ev_estimate(belief_summary))
+
+    # F32 — belief-peak proximity: reward being closer to the most likely
+    # rat cell than the opponent is.
+    out[26] = float(_belief_peak_proximity(board, belief_summary))
+
     return out
 
 
@@ -1552,7 +1800,25 @@ def _rat_chase_bonus(
         return 0.0
     widx = wy * BOARD_SIZE + wx
     oidx = oy * BOARD_SIZE + ox
-    return F_RAT_CHASE_COEF * (float(b[widx]) - float(b[oidx]))
+    scale = _rat_chase_scale(belief_summary)
+    return F_RAT_CHASE_COEF * scale * (
+        float(b[widx]) - float(b[oidx])
+    )
+
+
+def _rat_chase_scale(belief_summary: BeliefSummary) -> float:
+    """Scale F_RAT_CHASE based on how peaked the belief is.
+
+    When the rat belief is diffuse, the direct walk-catch bonus can be
+    noisy. We keep the full bonus when the belief is concentrated, but
+    scale it down smoothly when max_mass is small.
+    """
+    if belief_summary.max_mass is None:
+        return 0.0
+    mass = float(belief_summary.max_mass)
+    if mass <= 0.0:
+        return 0.0
+    return min(1.0, mass * 4.0)
 
 
 def evaluate(
@@ -1577,7 +1843,7 @@ def evaluate(
     knob). See `_rat_chase_bonus` docstring for the perspective-
     symmetric derivation.
 
-    Time budget: p99 <= 250 us over 10k random boards at 19 features
+    Time budget: p99 <= 250 us over 10k random boards at 21 features
     (v0.4 bumped from 200 us in T-40b for F19/F20 tail; see tests).
     """
     if board.is_game_over():
