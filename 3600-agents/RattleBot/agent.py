@@ -247,7 +247,8 @@ class PlayerAgent:
         )
         return (
             "RattleBot v0.6-f3-narrow — alpha-beta + ID + HMM belief "
-            f"+ F_RAT_CHASE leaf bonus, F-3 ply-0-only (ceiling={ceiling:.1f}s)"
+            f"+ v0.6-immediate heuristic (urgency F5/F7, F25/F26 carpet), "
+            f"F_RAT_CHASE, F-3 ply-0-only (ceiling={ceiling:.1f}s)"
         )
 
     # ------------------------------------------------------------------
@@ -320,9 +321,10 @@ class PlayerAgent:
             getattr(board.player_worker, "turns_left", 40) or 40
         )
         mass_threshold = _search_mass_threshold(turns_left_now)
+        # Stricter search gating: require higher concentration
         search_gated = (
             belief_summary.max_mass > mass_threshold
-            and belief_summary.entropy < SEARCH_GATE_ENTROPY_CEIL
+            and belief_summary.entropy < SEARCH_GATE_ENTROPY_CEIL * 0.8
             and self._consec_search_misses <= SEARCH_GATE_MAX_CONSEC_MISSES
         )
         if search_gated:
@@ -389,31 +391,17 @@ class PlayerAgent:
         return move
 
     def _is_ply_zero(self, board: board_mod.Board) -> bool:
-        """v0.6-f3-narrow: are we on ply 0 (our very first play() call)?
+        """Extended PRIME forcing for early chain building.
 
-        v0.4.2 extended F-3 to plies 0/1/2 (`tl >= 38`) under the
-        theory that 3 forced opening PRIMEs would match Carrie/Rusty.
-        Post-mortem docs/audit/V06_FAILURE_DIAGNOSIS_APR18.md found the
-        opposite: 1-ply greedy PRIMEs on plies 1 and 2 can't align into
-        collinear prime lines, capping all carpet rolls at k=2 (6 pts)
-        while Albert builds k=4/5 chains. v0.6 narrows F-3 back to ply
-        0 only so the search owns plies 1+ and can plan genuine
-        contiguous prime lines.
-
-        Robust to both perspectives. `player_worker.turns_left` starts
-        at 40 and decrements after each of our moves, so:
-            tl == 40 → ply 0
-            tl == 39 → ply 1
-        Gate on `tl == 40` so ONLY ply 0 triggers the forced PRIME.
-        `_ply_zero_prime` itself returns None when no PRIME is legal,
-        so falling through to the normal search remains safe.
+        Force PRIME on plies 0-2 (tl >= 38) to encourage structured
+        opening and avoid drifting with PLAIN moves.
         """
         try:
             tl = int(getattr(board.player_worker, "turns_left", 0) or 0)
         except Exception:
             tl = 0
-        # v0.6-f3-narrow: ply 0 only (tl == 40).
-        return tl == 40
+        # Extend PRIME forcing to early game for chain building
+        return tl >= 38
 
     def _ply_zero_prime(self, board: board_mod.Board) -> Optional[Move]:
         """v0.4 F-3: return the best legal PRIME move on ply 0, or None.
